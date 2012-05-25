@@ -525,7 +525,7 @@ begin
 --    rtu_rw_bank_i                                => s_vlan_bsel
       );
 
-  s_rtu_gcr_poly_used <= c_default_hash_poly when (regs_fromwb.gcr_poly_val_o = x"0000") else s_rtu_gcr_poly_input;
+  s_rtu_gcr_poly_used <= c_default_hash_poly when (regs_fromwb.gcr_poly_val_o = x"0000") else regs_fromwb.gcr_poly_val_o; --ML s_rtu_gcr_poly_input;
 
   mfifo_trigger <= regs_fromwb.gcr_mfifotrig_o and regs_fromwb.gcr_mfifotrig_load_o;
 
