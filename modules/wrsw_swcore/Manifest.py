@@ -45,7 +45,7 @@ files = [
 "swc_ll_read_data_validation.vhd",
 "swc_swcore_pkg.vhd",
 "ram_bug/swc_rd_wr_ram.vhd",
-
+"swc_core_vectorized_top.vhd",
 "swc_output_traffic_shaper.vhd"
 
 ];
