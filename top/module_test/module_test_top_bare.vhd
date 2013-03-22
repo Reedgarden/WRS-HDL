@@ -6,7 +6,7 @@
 -- Author     : Maciej Lipinski
 -- Company    : CERN BE-Co-HT
 -- Created    : 2013-03-19
--- Last update: 2013-03-19
+-- Last update: 2013-03-22
 -- Platform   : FPGA-generic
 -- Standard   : VHDL'87
 -------------------------------------------------------------------------------
@@ -43,6 +43,7 @@
 -- Revisions  :
 -- Date        Version  Author   Description
 -- 2013-03-19  1.0      mlipinsk Created
+-- 2013-03-22  2.0      greg.d   Expanded to be more generic
 -------------------------------------------------------------------------------
 
 library ieee;
@@ -51,16 +52,16 @@ use ieee.numeric_std.all;
 use ieee.math_real.CEIL;
 use ieee.math_real.log2;
 use work.swc_swcore_pkg.all;
+use work.test_top_pkg.all;
 
 library UNISIM;
 use UNISIM.vcomponents.all;
 
 entity module_test_top_bare is
   generic(
-    g_num_ports     : integer := 6;
     g_top_in_bits   : integer := 6;
     g_top_out_bits  : integer := 6;
-      g_module_name : string  := ""
+    g_module_name   : string  := ""
     );
   port (
     sys_rst_n_i     : in std_logic;         -- global reset
@@ -89,65 +90,22 @@ architecture rtl of module_test_top_bare is
       output_vector_o : out std_logic_vector(g_out_bits - 1 downto 0)
       );
     end component;
-
   
-  constant c_wb_data_width           : integer := 16;
-  constant c_wb_addr_width           : integer := 2;
-  constant c_wb_sel_width            : integer := 2;
-  constant c_prio_num                : integer := 8;
-  constant c_num_global_pause        : integer := 2;
-  constant c_prio_width              : integer := integer(CEIL(LOG2(real(c_prio_num-1)))) ;
-
-  constant c_swcore_input_bits       : integer := g_num_ports*(
-                                                  c_wb_data_width+ -- snk_data
-                                                  c_wb_addr_width+ -- snk_addr
-                                                  c_wb_sel_width + -- snk_sel
-                                                  1              + -- snk_cyc
-                                                  1              + -- snk_stb
-                                                  1              + -- snk_we
-                                                  1              + -- src_stall
-                                                  1              + -- src_ack 
-                                                  1              + -- src_err
-                                                  1              + -- rtu_rsp_valid
-                                                  g_num_ports    + -- rtu_dst_mask
-                                                  1              + -- rtu_drop
-                                                  c_prio_width   + -- rtu_prio
-                                                  1              + -- pp_req
-                                                  16             + -- pp_quanta
-                                                  8             )+ -- pp_class
-                                                  c_num_global_pause*(
-                                                  1              + -- gp_req
-                                                  16             + -- gp_quanta
-                                                  8              + -- gp_class
-                                                  g_num_ports   )+ -- gp_ports
-                                                  1              ; -- shaper_drop
-  constant c_swcore_output_bits      : integer := g_num_ports*(
-                                                  c_wb_data_width+ -- src_data
-                                                  c_wb_addr_width+ -- src_addr
-                                                  c_wb_sel_width + -- src_sel
-                                                  1              + -- src_cyc
-                                                  1              + -- src_stb
-                                                  1              + -- src_we
-                                                  1              + -- snk_stall
-                                                  1              + -- snk_ack 
-                                                  1              + -- snk_err
-                                                  1              + -- snk_rty
-                                                  1             )+ -- rtu_rsp_ack
-                                                  8              ; -- dbg
-                                                  
-
-  signal swcore_input_vector  : std_logic_vector(c_swcore_input_bits -1 downto 0);
-  signal swcore_output_vector : std_logic_vector(c_swcore_output_bits-1 downto 0);
+  signal DUT_in_vector  : std_logic_vector(f_invec_len(g_module_name) -1 downto 0);
+  signal DUT_out_vector : std_logic_vector(f_outvec_len(g_module_name)-1 downto 0);
 
   signal sel_clk_sys, sel_clk_sys_int : std_logic;
 begin
 
-  
-   SWcore: swc_core_vectorized_top 
+  --===================================================--
+  --                   SW Core                         --
+  --===================================================--
+  GEN_SWcore: if g_module_name = "SWcore" generate
+   DUT_SWC: swc_core_vectorized_top 
    generic map( 
-     g_num_ports               => g_num_ports,
-     g_in_bits                 => c_swcore_input_bits,
-     g_out_bits                => c_swcore_output_bits,
+     g_num_ports               => c_num_ports,
+     g_in_bits                 => f_invec_len("SWcore"),  --c_swcore_input_bits,
+     g_out_bits                => f_outvec_len("SWcore"), --c_swcore_output_bits,
      g_wb_data_width           => c_wb_data_width,
      g_wb_addr_width           => c_wb_addr_width,
      g_wb_sel_width            => c_wb_sel_width,
@@ -159,31 +117,32 @@ begin
      clk_i                     => clk_ref_i,
      clk_mpm_core_i            => clk_aux_i,
      rst_n_i                   => sys_rst_n_i,
-     input_vector_i            => swcore_input_vector,
-     output_vector_o           => swcore_output_vector
+     input_vector_i            => DUT_in_vector, --swcore_input_vector,
+     output_vector_o           => DUT_out_vector --swcore_output_vector
     );
+ end generate;
 
    FAKE_IN: fake_in_out
     generic map(
       g_in_bits                => g_top_in_bits,
-      g_out_bits               => c_swcore_input_bits
+      g_out_bits               => f_invec_len(g_module_name) --c_swcore_input_bits
       )
     port map(
       rst_n_i                  => sys_rst_n_i,
       clk_i                    => clk_ref_i,
       input_vector_i           => input_vector_i,
-      output_vector_o          => swcore_input_vector
+      output_vector_o          => DUT_in_vector --swcore_input_vector
       );
 
    FAKE_OUT: fake_in_out
     generic map(
-      g_in_bits                => c_swcore_output_bits,
+      g_in_bits                => f_outvec_len(g_module_name), --c_swcore_output_bits,
       g_out_bits               => g_top_out_bits
       )
     port map(
       rst_n_i                  => sys_rst_n_i,
       clk_i                    => clk_ref_i,
-      input_vector_i           => swcore_output_vector,
+      input_vector_i           => DUT_out_vector, --swcore_output_vector,
       output_vector_o          => output_vector_o
       );
 

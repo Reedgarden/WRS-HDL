@@ -214,7 +214,6 @@ architecture Behavioral of scb_top_synthesis is
 
   component module_test_top_bare is
     generic(
-      g_num_ports       : integer := 6;
       g_top_in_bits     : integer := 6;
       g_top_out_bits    : integer := 6;
       g_module_name     : string  := ""
@@ -292,9 +291,9 @@ begin
 
   TEST: module_test_top_bare
     generic map(
-      g_num_ports       => 18+1, 
       g_top_in_bits     => c_top_in_bits,
-      g_top_out_bits    => c_top_out_bits
+      g_top_out_bits    => c_top_out_bits,
+      g_module_name     => "SWcore"
       )
     port map(
       sys_rst_n_i     => sys_rst_n_i,
