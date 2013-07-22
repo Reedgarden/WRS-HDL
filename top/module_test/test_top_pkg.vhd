@@ -94,8 +94,38 @@ package test_top_pkg is
   --===================================================--
   --               Pstats parameters                   --
   --===================================================--
-  constant c_pstats_input_bits  : integer := 0;
-  constant c_pstats_output_bits : integer := 0;
+  constant c_cnt_pp : integer := 28;
+  constant c_pstats_input_bits  : integer :=  4 +   -- wb_adr_i
+                                              32 +  -- wb_dat_i
+                                              1 +   -- wb_cyc_i
+                                              4 +   -- wb_sel_i
+                                              1 +   -- wb_stb_i
+                                              1 +   -- wb_we_i
+                                              c_num_ports*c_cnt_pp;   -- events_i
+
+  constant c_pstats_output_bits : integer :=  32 +  -- wb_dat_o
+                                              1 +   -- wb_ack_o
+                                              1 +   -- wb_stall_o
+                                              1;    -- wb_int_o
+
+
+  --===================================================--
+  --                Components                 --
+  --===================================================--
+  component pstats_vectorized_top
+    generic (
+      g_nports    : integer := 8;
+      g_cnt_pp    : integer := 16; 
+      g_in_bits   : integer;
+      g_out_bits  : integer
+    );  
+    port (
+      rst_n_i : in std_logic;
+      clk_i   : in std_logic;
+      input_vector_i  : in  std_logic_vector(g_in_bits-1 downto 0); 
+      output_vector_o : out std_logic_vector(g_out_bits-1 downto 0)
+    );  
+    end component;
 
 
   --===================================================--

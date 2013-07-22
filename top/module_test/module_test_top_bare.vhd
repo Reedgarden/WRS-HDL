@@ -122,6 +122,22 @@ begin
     );
  end generate;
 
+ GEN_Pstats: if g_module_name = "Pstats" generate
+   DUT_PSTATS: pstats_vectorized_top
+   generic map(
+    g_nports  => c_num_ports,
+    g_cnt_pp  => c_cnt_pp,
+    g_in_bits => f_invec_len("Pstats"),   --c_pstats_input_bits,
+    g_out_bits => f_outvec_len("Pstats")  --c_pstats_output_bits
+    )
+   port map(
+    rst_n_i => sys_rst_n_i,
+    clk_i   => clk_ref_i,
+    input_vector_i  => DUT_in_vector,
+    output_vector_o => DUT_out_vector
+    );
+ end generate;
+
    FAKE_IN: fake_in_out
     generic map(
       g_in_bits                => g_top_in_bits,

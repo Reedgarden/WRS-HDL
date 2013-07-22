@@ -293,7 +293,7 @@ begin
     generic map(
       g_top_in_bits     => c_top_in_bits,
       g_top_out_bits    => c_top_out_bits,
-      g_module_name     => "SWcore"
+      g_module_name     => "Pstats"
       )
     port map(
       sys_rst_n_i     => sys_rst_n_i,
