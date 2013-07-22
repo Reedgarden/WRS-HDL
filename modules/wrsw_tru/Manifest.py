@@ -12,11 +12,4 @@ files = [
   "tru_trans_marker_trig.vhd",
   "tru_trans_lacp_dist.vhd",
   "tru_trans_lacp_colect.vhd",
-  "../wrsw_shared_types_pkg.vhd",
-  "../wrsw_rtu/rtu_private_pkg.vhd",
-  "../wrsw_rtu/rtu_wbgen2_pkg.vhd",
-  "../../ip_cores/general-cores/modules/wishbone/wishbone_pkg.vhd",
-  "../../ip_cores/general-cores/modules/common/gencores_pkg.vhd",
-  "../../ip_cores/general-cores/modules/wishbone/wbgen2/wbgen2_pkg.vhd",
-  "../../ip_cores/general-cores/modules/wishbone/wb_slave_adapter/wb_slave_adapter.vhd",
   ]
