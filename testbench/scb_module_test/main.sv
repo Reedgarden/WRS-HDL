@@ -37,9 +37,9 @@ module main;
     
    module_test_top_bare
      #(
-       .g_num_ports(g_num_ports),
        .g_top_in_bits(g_top_in_bits),
-       .g_top_out_bits(g_top_out_bits)
+       .g_top_out_bits(g_top_out_bits),
+       .g_module_name("Pstats")
        ) DUT (
               .sys_rst_n_i    (rst_n),
               .clk_startup_i  (clk_ref),
