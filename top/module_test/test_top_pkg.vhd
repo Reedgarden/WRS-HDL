@@ -108,6 +108,11 @@ package test_top_pkg is
                                               1 +   -- wb_stall_o
                                               1;    -- wb_int_o
 
+  --===================================================--
+  --               Endpoint parameters                 --
+  --===================================================--
+	constant c_ep_input_bits  : integer := 142;
+	constant c_ep_output_bits : integer := 321;
 
   --===================================================--
   --                Components                 --
@@ -127,23 +132,39 @@ package test_top_pkg is
     );  
     end component;
 
+	component endpoint_vectorized_top
+		generic (
+			g_in_bits		:	integer;
+			g_out_bits	:	integer
+		);
+		port (
+			rst_n_i					:	in  std_logic;
+			clk_i						:	in	std_logic;
+			clk_dmtd_i			:	in  std_logic;
+			clk_aux_i				:	in  std_logic;
+			input_vector_i	:	in	std_logic_vector(g_in_bits-1 downto 0);
+			output_vector_o	:	out	std_logic_vector(g_out_bits-1 downto 0)
+		);
+	end component;
 
   --===================================================--
   --              Test module parameters               --
   --===================================================--
 
   -- how many modules are supported
-  constant c_nmods : integer := 2;
+  constant c_nmods : integer := 3;
   -- names of the supported modules
-  constant test_mods : t_strarr(0 to c_nmods-1) := ("SWcore", "Pstats");
+  constant test_mods : t_strarr(0 to c_nmods-1) := ("SWcore", "Pstats", "Endpnt");
 
   constant test_inlen : t_lentype(0 to c_nmods-1) := (
                                               c_swcore_input_bits,   -- SWcore
-                                              c_pstats_input_bits    -- Pstats
+                                              c_pstats_input_bits,   -- Pstats
+																							c_ep_input_bits				 -- Endpoint
                                             );
   constant test_outlen: t_lentype(0 to c_nmods-1) := (
                                               c_swcore_output_bits,  -- SWcore
-                                              c_pstats_output_bits   -- Pstats
+                                              c_pstats_output_bits,  -- Pstats
+																							c_ep_output_bits			 -- Endpoint
                                             );
 
   --===================================================--
