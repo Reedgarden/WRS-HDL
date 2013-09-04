@@ -645,16 +645,12 @@ begin
           fc_rx_pause_start_p_o   => fc_rx_pause(i).req,  
           fc_rx_pause_quanta_o    => fc_rx_pause(i).quanta,    
           fc_rx_pause_prio_mask_o => fc_rx_pause(i).classes, 
-          fc_rx_buffer_occupation_o => ep_dbg_rx_buf_array(i),
           ----------------------------
 
           rmon_events_o => ep_events((i+1)*c_epevents_sz-1 downto i*c_epevents_sz),
 
           led_link_o => led_link_o(i),
-          led_act_o  => led_act_o(i),
-          dbg_o      => ep_dbg_fab_pipes_array(i),
-          dbg_tx_pcs_wr_count_o => ep_dbg_tx_pcs_wr_array(i),
-          dbg_tx_pcs_rd_count_o => ep_dbg_tx_pcs_rd_array(i)
+          led_act_o  => led_act_o(i)
           );
 
           phys_o(i).tx_data <= ep_dbg_data_array(i);
@@ -1076,17 +1072,17 @@ begin
   clk_dmtd_divsel_o <= '1';             -- choose 62.5 MHz DDMTD clock
   clk_sys_o         <= clk_sys;
   
-  CS_ICON : chipscope_icon
-   port map (
-    CONTROL0 => CONTROL0);
-  CS_ILA : chipscope_ila
-   port map (
-     CONTROL => CONTROL0,
-     CLK     => phys_i(0).rx_clk,
-     TRIG0   => TRIG0,
-     TRIG1   => TRIG1,
-     TRIG2   => TRIG2,
-     TRIG3   => TRIG3);
+--  CS_ICON : chipscope_icon
+--   port map (
+--    CONTROL0 => CONTROL0);
+--  CS_ILA : chipscope_ila
+--   port map (
+--     CONTROL => CONTROL0,
+--     CLK     => phys_i(0).rx_clk,
+--     TRIG0   => TRIG0,
+--     TRIG1   => TRIG1,
+--     TRIG2   => TRIG2,
+--     TRIG3   => TRIG3);
 
   --------------------------- dbg_epj
 --   TRIG0(15    downto   0) <= phys_i(0).rx_data;
