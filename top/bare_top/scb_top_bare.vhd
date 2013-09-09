@@ -152,6 +152,7 @@ architecture rtl of scb_top_bare is
   constant c_ALL_EVENTS    : integer := c_TRU_EVENTS + c_RTU_EVENTS + c_epevents_sz;
   constant c_DUMMY_RMON    : boolean := false; -- define TRUE to enable dummy_rmon module for debugging PSTAT
   constant c_NUM_GPIO_PINS : integer := 1;
+  constant c_NUM_IRQS      : integer := 4;
 --   constant c_epevents_sz   : integer := 15;
 -------------------------------------------------------------------------------
 -- Interconnect & memory layout
@@ -296,7 +297,7 @@ architecture rtl of scb_top_bare is
   -- Component declarations
   -----------------------------------------------------------------------------
 
-  signal vic_irqs : std_logic_vector(31 downto 0);
+  signal vic_irqs : std_logic_vector(c_NUM_IRQS-1 downto 0);
 
   signal control0                   : std_logic_vector(35 downto 0);
   signal trig0, trig1, trig2, trig3 : std_logic_vector(31 downto 0);
@@ -516,7 +517,7 @@ begin
     generic map (
       g_interface_mode      => PIPELINED,
       g_address_granularity => BYTE,
-      g_num_interrupts      => 32)
+      g_num_interrupts      => c_NUM_IRQS)
     port map (
       clk_sys_i    => clk_sys,
       rst_n_i      => rst_n_sys,
@@ -1038,7 +1039,6 @@ begin
   vic_irqs(1)           <= cnx_master_in(c_SLAVE_TXTSU).int;
   vic_irqs(2)           <= cnx_master_in(c_SLAVE_RTU).int;
   vic_irqs(3)           <= cnx_master_in(c_SLAVE_PSTATS).int;
-  vic_irqs(31 downto 4) <= (others => '0');
 
 -------------------------------------------------------------------------------
 -- Various constant-driven I/Os
