@@ -156,6 +156,18 @@ end scb_top_synthesis;
 
 architecture Behavioral of scb_top_synthesis is
 
+
+  component swcore_pll is
+   port
+   (-- Clock in ports
+    clk_sys_i           : in     std_logic;
+    -- Clock out ports
+    clk_aux_o          : out    std_logic
+   );
+  end component;
+
+
+
   constant c_NUM_PHYS  : integer := 8;
   constant c_NUM_PORTS : integer := 8;
 
@@ -212,6 +224,7 @@ architecture Behavioral of scb_top_synthesis is
   signal clk_gtx8_11  : std_logic;
   signal clk_gtx12_15 : std_logic;
   signal clk_gtx16_19 : std_logic;
+  signal clk_aux_unused : std_logic;
 
   signal clk_gtx : std_logic_vector(c_NUM_PHYS-1 downto 0);
 
@@ -401,14 +414,14 @@ begin
       I  => fpga_clk_ref_p_i,
       IB => fpga_clk_ref_n_i);
 
-  U_Buf_CLK_Sys : IBUFGDS
-    generic map (
-      DIFF_TERM  => true,
-      IOSTANDARD => "LVDS_25")
-    port map (
-      O  => clk_aux,
-      I  => fpga_clk_aux_p_i,
-      IB => fpga_clk_aux_n_i);
+   U_Buf_CLK_Sys : IBUFGDS
+     generic map (
+       DIFF_TERM  => true,
+       IOSTANDARD => "LVDS_25")
+     port map (
+       O  => clk_aux_unused,
+       I  => fpga_clk_aux_p_i,
+       IB => fpga_clk_aux_n_i);
 
 
   U_Buf_CLK_DMTD : IBUFGDS
@@ -420,7 +433,8 @@ begin
       I  => fpga_clk_dmtd_p_i,
       IB => fpga_clk_dmtd_n_i);
 
-  
+  U_swcore_pll: swcore_pll port map  ( clk_sys_i => clk_ref, clk_aux_o => clk_aux);
+
   U_SYS_PLL : PLL_BASE
     generic map (
       BANDWIDTH          => "OPTIMIZED",
