@@ -315,6 +315,9 @@ architecture rtl of scb_top_bare is
   signal link_kill                  : std_logic_vector(c_NUM_PORTS-1 downto 0);
 
  
+  --GD fake RTU
+  type t_gd_rtu_resp is array(integer range <>) of std_logic_vector(18 downto 0);
+  signal gd_rtu_rsp : t_gd_rtu_resp(c_NUM_PORTS downto 0);
 
 
 
@@ -795,10 +798,10 @@ begin
         rst_n_i    => rst_n_sys,--rst_n_periph,
         req_i      => rtu_req(g_num_ports-1 downto 0),
         req_full_o => rtu_full(g_num_ports-1 downto 0),
-        rsp_o      => rtu_rsp(g_num_ports-1 downto 0),
-        rsp_ack_i  => rtu_rsp_ack(g_num_ports-1 downto 0),
-        rsp_abort_i=> rtu_rsp_abort(g_num_ports-1 downto 0), -- this is request from response receiving node
-        rq_abort_i => rtu_rq_abort(g_num_ports-1 downto 0), -- this is request from requesting module
+        rsp_o      => open, --rtu_rsp(g_num_ports-1 downto 0),
+        rsp_ack_i  => (others=>'1'),  --rtu_rsp_ack(g_num_ports-1 downto 0),
+        rsp_abort_i=> (others=>'0'),  --rtu_rsp_abort(g_num_ports-1 downto 0), -- this is request from response receiving node
+        rq_abort_i => (others=>'0'),  --rtu_rq_abort(g_num_ports-1 downto 0), -- this is request from requesting module
         ------ new TRU stuff ----------
         tru_req_o  => tru_req,
         tru_resp_i => tru_resp,
@@ -808,6 +811,37 @@ begin
         rmon_events_o => rtu_events,
         wb_i       => cnx_master_out(c_SLAVE_RTU),
         wb_o       => cnx_master_in(c_SLAVE_RTU));
+
+    -- GD fake RTU
+    gd_rtu_rsp(0)  <= "0000000000000000010";
+    gd_rtu_rsp(1)  <= "0000000000000000001";
+    gd_rtu_rsp(2)  <= "0000000000000001000";
+    gd_rtu_rsp(3)  <= "0000000000000000100";
+    gd_rtu_rsp(4)  <= "0000000000000100000";
+    gd_rtu_rsp(5)  <= "0000000000000010000";
+    gd_rtu_rsp(6)  <= "0000000000010000000";
+    gd_rtu_rsp(7)  <= "0000000000001000000";
+    gd_rtu_rsp(8)  <= "0000000001000000000";
+    gd_rtu_rsp(9)  <= "0000000000100000000";
+    gd_rtu_rsp(10) <= "0000000100000000000";
+    gd_rtu_rsp(11) <= "0000000010000000000";
+    gd_rtu_rsp(12) <= "0000010000000000000";
+    gd_rtu_rsp(13) <= "0000001000000000000";
+    gd_rtu_rsp(14) <= "0001000000000000000";
+    gd_rtu_rsp(15) <= "0000100000000000000";
+    gd_rtu_rsp(16) <= "0100000000000000000";
+    gd_rtu_rsp(17) <= "0010000000000000000";
+
+    gd_rtu_rsp(18) <= "0000000000000000000";
+
+    GEN_GD_FRTU: for I in 0 to 17 generate
+      rtu_rsp(I).valid <= '1';
+      rtu_rsp(I).port_mask(18 downto 0) <= gd_rtu_rsp(I);
+      rtu_rsp(I).port_mask(31 downto 19) <= (others=>'0');
+      rtu_rsp(I).prio <= (others=>'0');
+      rtu_rsp(I).drop <= '0';
+      rtu_rsp(I).hp   <= '0';
+    end generate;
 
     gen_TRU : if(g_with_TRU = true) generate
       U_TRU: xwrsw_tru
