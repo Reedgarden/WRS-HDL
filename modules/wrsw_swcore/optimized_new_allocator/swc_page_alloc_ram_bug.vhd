@@ -521,17 +521,18 @@ begin  -- syn
     end if;
   end process;
 
-  p_gen_nomem_output : process(clk_i)
+  p_gen_nomem_output : process(clk_i) --65536
   begin
     if rising_edge(clk_i) then
       if rst_n_i = '0' then
         out_nomem <= '0';
       else
-        if(out_nomem = '0' and (free_pages < to_unsigned(3, free_blocks'length))) then
+        if(out_nomem = '0' and (free_pages < to_unsigned((900+3), free_blocks'length))) then
           out_nomem <= '1';
-        elsif(out_nomem = '1' and (free_pages > to_unsigned((3*g_num_ports), free_blocks'length))) then
+        elsif(out_nomem = '1' and (free_pages > to_unsigned((900+3*g_num_ports), free_blocks'length))) then
           out_nomem <= real_nomem;
         end if;
+        
       end if;
     end if;
   end process;
@@ -550,11 +551,26 @@ begin  -- syn
   gen_no_RESOURCE_MGR: if (g_with_RESOURCE_MGR = false) generate
     resource_o                                                  <= (others => '0');
     set_usecnt_succeeded_o                                      <= '1';
-    res_full_o                                                  <= (others => '0');
-    res_almost_full_o                                           <= (others => '0');
+    res_full_o                                                  <= (others => std_logic(out_nomem or initializing));--(others => '0');
+--     res_almost_full_o                                           <= (others => '0');
     dbg_o (g_page_addr_width+1-1 downto 0)                      <= std_logic_vector(free_pages); 
     dbg_o (g_num_dbg_vector_width-1 downto g_page_addr_width+1) <= (others =>'0'); 
     set_usecnt_allowed_p1                                       <= '1';
+    p_gen_almost_full : process(clk_i)
+    begin
+      if rising_edge(clk_i) then
+        if rst_n_i = '0' then
+          res_almost_full_o <= (others => '0');
+        else
+          if(free_pages < to_unsigned(40, free_blocks'length) ) then
+            res_almost_full_o <= (others => '1');
+          else
+            res_almost_full_o <= (others => '0');
+          end if;    
+        end if;
+      end if;
+    end process;    
+    
   end generate;
 
   gen_RESOURCE_MGR: if (g_with_RESOURCE_MGR = true) generate
