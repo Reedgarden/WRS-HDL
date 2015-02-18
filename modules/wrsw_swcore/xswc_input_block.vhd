@@ -2140,7 +2140,7 @@ lw_sync_2nd_stage_chk <= '1' when (page_word_cnt = to_unsigned(g_page_size - 3, 
 
 -- transfer_pck FSM sync (tp): needs to be true for rcv_pck to enter READY state
 tp_sync <= '1' when (s_transfer_pck = S_IDLE or               -- 
-                                  s_transfer_pck = S_DROP or  -- 
+                                  --s_transfer_pck = S_DROP or  -- 
                                   s_transfer_pck = S_TRANSFERED) else '0';
 
 -- rcv_pck FSM is sync-ed                                  
