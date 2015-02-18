@@ -70,6 +70,7 @@ library work;
 use work.swc_swcore_pkg.all;
 use work.genram_pkg.all;
 use work.gencores_pkg.all;
+use work.wrs_dbg_pkg.all;
 
 entity swc_multiport_page_allocator is
   generic (
@@ -137,7 +138,8 @@ entity swc_multiport_page_allocator is
     set_usecnt_succeeded_o : out std_logic_vector(g_num_ports                     -1 downto 0);
     res_full_o             : out std_logic_vector(g_num_ports * g_resource_num    -1 downto 0);
     res_almost_full_o      : out std_logic_vector(g_num_ports * g_resource_num    -1 downto 0);
-    dbg_o                  : out std_logic_vector(g_num_dbg_vector_width - 1 downto 0)  
+    dbg_o                  : out std_logic_vector(g_num_dbg_vector_width - 1 downto 0);
+    nice_dbg_o  : out t_dbg_swc_mmu
 
 --     tap_out_o : out std_logic_vector(62 + 49 downto 0)
     );
@@ -192,12 +194,7 @@ architecture syn of swc_multiport_page_allocator is
       res_full_o              : out std_logic_vector(g_resource_num      -1 downto 0);
       res_almost_full_o       : out std_logic_vector(g_resource_num      -1 downto 0);
       dbg_o                   : out std_logic_vector(g_num_dbg_vector_width - 1 downto 0);
-      -----------------------
-      dbg_double_free_o       : out std_logic;
-      dbg_double_force_free_o : out std_logic;
-      dbg_q_write_o           : out std_logic;
-      dbg_q_read_o            : out std_logic;
-      dbg_initializing_o      : out std_logic);
+      nice_dbg_o  : out t_dbg_swc_palloc);
   end component;
 
   type t_port_state is record
@@ -506,12 +503,7 @@ begin  -- syn
       res_full_o              => pg_res_full,
       res_almost_full_o       => pg_res_almost_full,
       dbg_o                   => dbg_o,
-      -------------------------------      
-      dbg_double_force_free_o => dbg_double_force_free,
-      dbg_double_free_o       => dbg_double_free,
-      dbg_q_read_o            => dbg_q_read,
-      dbg_q_write_o           => dbg_q_write,
-      dbg_initializing_o      => dbg_initializing);
+      nice_dbg_o              => nice_dbg_o.palloc);
 
   nomem_o        <= pg_nomem;
   pgaddr_alloc_o <= pg_addr_alloc;

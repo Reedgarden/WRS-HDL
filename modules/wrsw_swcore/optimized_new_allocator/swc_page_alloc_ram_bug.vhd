@@ -79,6 +79,7 @@ use ieee.numeric_std.all;
 
 use work.swc_swcore_pkg.all;
 use work.genram_pkg.all;
+use work.wrs_dbg_pkg.all;
 
 entity swc_page_allocator_new is
   generic (
@@ -203,15 +204,7 @@ entity swc_page_allocator_new is
     res_almost_full_o             : out std_logic_vector(g_resource_num      -1 downto 0);
 
     dbg_o                         : out std_logic_vector(g_num_dbg_vector_width - 1 downto 0);
-
-    ----------------------------------------------------------------------
-
-    dbg_double_free_o       : out std_logic;
-    dbg_double_force_free_o : out std_logic;
-    dbg_q_write_o : out std_logic;
-    dbg_q_read_o : out std_logic;
-    dbg_initializing_o : out std_logic    
-    );
+    nice_dbg_o  : out t_dbg_swc_palloc);
 
 end swc_page_allocator_new;
 
@@ -554,16 +547,18 @@ begin  -- syn
     dbg_o (g_page_addr_width+1-1 downto 0)                      <= std_logic_vector(free_pages); 
     dbg_o (g_num_dbg_vector_width-1 downto g_page_addr_width+1) <= (others =>'0'); 
     set_usecnt_allowed_p1                                       <= '1';
+    res_almost_full_o <= res_almost_full;
+
     p_gen_almost_full : process(clk_i)
     begin
       if rising_edge(clk_i) then
         if rst_n_i = '0' then
-          res_almost_full_o <= (others => '0');
+          res_almost_full <= (others => '0');
         else
           if(free_pages < to_unsigned(40, free_blocks'length) ) then
-            res_almost_full_o <= (others => '1');
+            res_almost_full <= (others => '1');
           else
-            res_almost_full_o <= (others => '0');
+            res_almost_full <= (others => '0');
           end if;    
         end if;
       end if;
@@ -633,4 +628,9 @@ begin  -- syn
     set_usecnt_succeeded_o     <= res_mgr_rescnt_set;
     res_almost_full_o          <= res_almost_full;
   end generate;
+
+  nice_dbg_o.free_pages      <= std_logic_vector(free_pages);
+  nice_dbg_o.res_almost_full <= res_almost_full;
+  nice_dbg_o.q_write         <= q_write_p1;
+  nice_dbg_o.q_read          <= q_read_p0;
 end syn;

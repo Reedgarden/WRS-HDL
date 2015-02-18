@@ -52,6 +52,7 @@ use work.swc_swcore_pkg.all;
 use work.wr_fabric_pkg.all;
 use work.wrsw_shared_types_pkg.all;
 use work.mpm_pkg.all;
+use work.wrs_dbg_pkg.all;
 
 entity xswc_core is
   generic( 
@@ -117,6 +118,7 @@ entity xswc_core is
 -------------------------------------------------------------------------------      
   
    dbg_o                      : out std_logic_vector(g_num_dbg_vector_width - 1 downto 0);
+   nice_dbg_o : out t_dbg_swc;
    
 -------------------------------------------------------------------------------
 -- I/F with Routing Table Unit (RTU)
@@ -361,7 +363,7 @@ architecture rtl of xswc_core is
    
    signal dbg_pckstart_pageaddr : std_logic_vector(g_num_ports*c_mpm_page_addr_width - 1 downto 0);
    signal dbg_pckinter_pageaddr : std_logic_vector(g_num_ports*c_mpm_page_addr_width - 1 downto 0);
-   
+
   begin --rtl
    
   --chipscope_icon_1: chipscope_icon
@@ -489,8 +491,8 @@ architecture rtl of xswc_core is
         tap_out_o                => tap_ib(i),
         
         dbg_pckstart_pageaddr_o  => dbg_pckstart_pageaddr((i+1)*c_mpm_page_addr_width-1 downto i*c_mpm_page_addr_width),
-        dbg_pckinter_pageaddr_o  => dbg_pckinter_pageaddr((i+1)*c_mpm_page_addr_width-1 downto i*c_mpm_page_addr_width)
-        );
+        dbg_pckinter_pageaddr_o  => dbg_pckinter_pageaddr((i+1)*c_mpm_page_addr_width-1 downto i*c_mpm_page_addr_width),
+        nice_dbg_o => nice_dbg_o.ib(i));
         
         
     OUTPUT_BLOCK: xswc_output_block_new 
@@ -563,8 +565,8 @@ architecture rtl of xswc_core is
         src_i                    => src_i(i),
         src_o                    => src_o(i),
         dbg_hwdu_o               => hwdu_output_block(i),
-        tap_out_o                => tap_ob(i)
-      );        
+        tap_out_o                => tap_ob(i),
+        nice_dbg_o  => nice_dbg_o.ob(i));        
         
   end generate gen_blocks;
 
@@ -720,7 +722,8 @@ architecture rtl of xswc_core is
       res_full_o                 => mmu2ib_res_full,
       res_almost_full_o          => mmu2ib_res_almost_full,
 
-      dbg_o                      => hwdu_mmu
+      dbg_o                      => hwdu_mmu,
+      nice_dbg_o                 => nice_dbg_o.mmu
 --      tap_out_o => tap_alloc
       );
        

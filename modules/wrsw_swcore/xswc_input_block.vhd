@@ -98,6 +98,7 @@ library work;
 use work.swc_swcore_pkg.all;
 use work.genram_pkg.all;
 use work.wr_fabric_pkg.all;
+use work.wrs_dbg_pkg.all;
 
 entity xswc_input_block is
   generic (
@@ -261,7 +262,9 @@ entity xswc_input_block is
     tap_out_o: out std_logic_vector(49 + 62 downto 0);
     
     dbg_pckstart_pageaddr_o : out std_logic_vector(g_page_addr_width - 1 downto 0);
-    dbg_pckinter_pageaddr_o : out std_logic_vector(g_page_addr_width - 1 downto 0)
+    dbg_pckinter_pageaddr_o : out std_logic_vector(g_page_addr_width - 1 downto 0);
+   
+    nice_dbg_o  : out t_dbg_swc_ib
 
     );
 end xswc_input_block;
@@ -2391,6 +2394,13 @@ dbg_dropped_on_res_full <= pckstart_usecnt_req and mmu_set_usecnt_done_i and (no
 
 dbg_pckstart_pageaddr_o <= pckstart_pageaddr;
 dbg_pckinter_pageaddr_o <= pckinter_pageaddr;
+
+  nice_dbg_o.rtu_valid <= rtu_rsp_valid_i;
+  nice_dbg_o.alloc_fsm <= alloc_FSM;
+  nice_dbg_o.trans_fsm <= trans_FSM;
+  nice_dbg_o.rcv_fsm   <= rcv_p_FSM;
+  nice_dbg_o.ll_fsm    <= linkl_FSM;
+
 
 -- tap_out_o <= f_slv_resize(              -- 
 --  -- f_enum2nat(s_rcv_pck) &               --

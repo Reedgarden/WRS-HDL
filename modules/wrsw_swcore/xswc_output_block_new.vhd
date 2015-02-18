@@ -59,6 +59,7 @@ use work.genram_pkg.all;
 use work.wr_fabric_pkg.all;
 use work.endpoint_private_pkg.all;      -- Tom
 use work.ep_wbgen2_pkg.all;             -- tom
+use work.wrs_dbg_pkg.all;
 
 entity xswc_output_block_new is
   generic (
@@ -134,7 +135,8 @@ entity xswc_output_block_new is
 -- debugging
 -------------------------------------------------------------------------------  
     dbg_hwdu_o : out std_logic_vector(g_hwdu_output_block_width -1 downto 0);
-    tap_out_o : out std_logic_vector(15 downto 0)
+    tap_out_o : out std_logic_vector(15 downto 0);
+    nice_dbg_o : out t_dbg_swc_ob
     );
 end xswc_output_block_new;
 
@@ -1041,4 +1043,8 @@ begin  --  behavoural
                x"0" when (s_prep_to_send = S_RETRY_READY)                else
                x"6" ;
   dbg_hwdu_o(7 downto 0)<= send_FSM & prep_FSM;
+
+  nice_dbg_o.send_fsm <= send_FSM;
+  nice_dbg_o.prep_fsm <= prep_FSM;
+
 end behavoural;
