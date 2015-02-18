@@ -49,6 +49,7 @@ library work;
 use work.wr_fabric_pkg.all;
 use work.wrsw_shared_types_pkg.all;
 use work.genram_pkg.all;
+use work.wrs_dbg_pkg.all;
 
 
 package swc_swcore_pkg is
@@ -193,7 +194,8 @@ package swc_swcore_pkg is
       free_pck_data_o        : out std_logic_vector(g_num_ports * g_data_width - 1 downto 0);
     
       mpm_rpath_addr_i       : in  std_logic_vector(g_addr_width - 1 downto 0);
-      mpm_rpath_data_o       : out std_logic_vector(g_data_width - 1 downto 0)
+      mpm_rpath_data_o       : out std_logic_vector(g_data_width - 1 downto 0);
+      nice_dbg_o : out t_dbg_swc_mll
     );
   end component;
   
@@ -281,9 +283,8 @@ package swc_swcore_pkg is
     tap_out_o : out std_logic_vector(49+62 downto 0);
         
     dbg_pckstart_pageaddr_o : out std_logic_vector(g_page_addr_width - 1 downto 0);
-    dbg_pckinter_pageaddr_o : out std_logic_vector(g_page_addr_width - 1 downto 0)
-
-    );
+    dbg_pckinter_pageaddr_o : out std_logic_vector(g_page_addr_width - 1 downto 0);
+    nice_dbg_o  : out t_dbg_swc_ib);
   end component;
 
   component swc_multiport_page_allocator is
@@ -331,8 +332,8 @@ package swc_swcore_pkg is
       set_usecnt_succeeded_o : out std_logic_vector(g_num_ports                    -1 downto 0);
       res_full_o             : out std_logic_vector(g_num_ports * g_resource_num   -1 downto 0);
       res_almost_full_o      : out std_logic_vector(g_num_ports * g_resource_num   -1 downto 0);
-      dbg_o                  : out std_logic_vector(g_num_dbg_vector_width - 1 downto 0)
-      );
+      dbg_o                  : out std_logic_vector(g_num_dbg_vector_width - 1 downto 0);
+      nice_dbg_o  : out t_dbg_swc_mmu);
   
   end component;
     
@@ -532,7 +533,8 @@ package swc_swcore_pkg is
       src_i : in  t_wrf_source_in;
       src_o : out t_wrf_source_out;
       wdog_o    : out t_swc_fsms;
-      tap_out_o : out std_logic_vector(15 downto 0));
+      tap_out_o : out std_logic_vector(15 downto 0);
+      nice_dbg_o  : out t_dbg_swc_ob);
   end component;
 
 component  swc_multiport_pck_pg_free_module is
@@ -576,7 +578,8 @@ component  swc_multiport_pck_pg_free_module is
     mmu_force_free_resource_o       : out std_logic_vector(g_num_ports * g_resource_num_width -1 downto 0);
     mmu_force_free_resource_valid_o : out std_logic_vector(g_num_ports-1 downto 0);
     
-    wdog_o      : out t_swc_fsms_array(g_num_ports-1 downto 0)
+    wdog_o      : out t_swc_fsms_array(g_num_ports-1 downto 0);
+    nice_dbg_o  : out t_dbg_swc_free_array(g_num_ports-1 downto 0)
     );
   end component;
 
@@ -619,7 +622,8 @@ component  swc_multiport_pck_pg_free_module is
       mmu_force_free_resource_o       : out std_logic_vector(g_resource_num_width -1 downto 0);
       mmu_force_free_resource_valid_o : out std_logic;
       
-      wdog_o : out t_swc_fsms
+      wdog_o : out t_swc_fsms;
+      nice_dbg_o : out t_dbg_swc_free
       );
   end component;
   
@@ -669,8 +673,8 @@ component  swc_multiport_pck_pg_free_module is
       nomem_o        : out std_logic;
 
       dbg_o               : out std_logic_vector(g_num_dbg_vector_width  -1 downto 0);
-      shaper_drop_at_hp_ena_i : in std_logic
-      );
+      shaper_drop_at_hp_ena_i : in std_logic;
+      nice_dbg_o  : out t_dbg_swc);
   end component;
  
   component swc_core is
@@ -765,7 +769,8 @@ component  swc_multiport_pck_pg_free_module is
       write_data_ready_i    : in std_logic;
 
       read_data_o           : out std_logic_vector(g_data_width - 1 downto 0);
-      read_data_valid_o     : out std_logic
+      read_data_valid_o     : out std_logic;
+      nice_dbg_o            : out t_dbg_swc_mll_rv
   );
   end component;
   

@@ -37,6 +37,7 @@ use ieee.numeric_std.all;
 
 use work.gencores_pkg.all;
 use work.genram_pkg.all;
+use work.wrs_dbg_pkg.all;
 
 entity mpm_rpath_io_block is
   
@@ -83,8 +84,9 @@ entity mpm_rpath_io_block is
     df_empty_i : in  std_logic;
     df_flush_o : out std_logic;
     df_rd_o    : out std_logic;
-    df_d_i     : in  std_logic_vector(g_data_width-1 downto 0)
-    );
+    df_d_i     : in  std_logic_vector(g_data_width-1 downto 0);
+
+    nice_dbg_o : out t_dbg_mpm_read_io);
 
 end mpm_rpath_io_block;
 
@@ -215,6 +217,9 @@ architecture behavioral of mpm_rpath_io_block is
                                          -- (2 + wait_at_abort) cycles
                                          -- the number (2) was derived experimentally (lowest 
                                          -- working)
+
+  signal ll_req_out : std_logic;
+  signal ll_addr_out: std_logic_vector(g_page_addr_width-1 downto 0);
   signal fetch_pg_words_new : std_logic;
   signal fetch_pg_words_used : std_logic;
 
@@ -431,7 +436,7 @@ begin  -- behavioral
               rport_pg_req <= '0';
               cur_page       <= rport_pg_addr_i;
               ll_req_int       <= '1';
-              ll_addr_o      <= rport_pg_addr_i;
+              ll_addr_out    <= rport_pg_addr_i;
               page_state     <= NEXT_LINK;
               fetch_first    <= '1';
 --          ML:  start pre-fetching well in advance even if the payload is more-or-less equal to 
@@ -447,7 +452,7 @@ begin  -- behavioral
             
             if(ll_grant_d1 = '1' and cur_ll.valid = '1') then
               cur_page  <= cur_ll.next_page;
-              ll_addr_o <= cur_ll.next_page;
+              ll_addr_out <= cur_ll.next_page;
 
               if(cur_ll.eof = '1') then
                 page_state     <= WAIT_LAST_ACK;
@@ -519,6 +524,35 @@ begin  -- behavioral
     end if;
   end process;
 
-  ll_req_o <= ll_req_int and not (ll_grant_i or ll_grant_d0 or ll_grant_d1);
+  ll_req_out <= ll_req_int and not (ll_grant_i or ll_grant_d0 or ll_grant_d1);
+
+  ll_req_o <= ll_req_out;
+  ll_addr_o <= ll_addr_out;
+
+  nice_dbg_o.ll_req   <= ll_req_out;
+  nice_dbg_o.ll_grant <= ll_grant_i;
+  nice_dbg_o.ll_adr   <= ll_addr_out;
+  nice_dbg_o.ll_next_page <= cur_ll.next_page;
+  nice_dbg_o.ll_eof   <= cur_ll.eof;
+  nice_dbg_o.ll_valid <= cur_ll.valid;
+  nice_dbg_o.page_fsm <= "000" when (page_state = FIRST_PAGE) else
+                         "001" when (page_state = NEXT_LINK) else
+                         "010" when (page_state = WAIT_LAST_ACK) else
+                         "011" when (page_state = WAIT_ACK) else
+                         "100" when (page_state = NASTY_WAIT) else
+                         "111";
+  nice_dbg_o.words_xmitted     <= std_logic_vector(words_xmitted(9 downto 0));
+  nice_dbg_o.last_pg_start_ptr <= std_logic_vector(last_pg_start_ptr(9 downto 0));
+  nice_dbg_o.long_rst_at_abort <= long_rst_at_abort;
+  nice_dbg_o.rport_pg_req <= rport_pg_req;
+  nice_dbg_o.rport_pg_valid_i <= rport_pg_valid_i;
+  nice_dbg_o.pre_fetch  <= pre_fetch;
+  nice_dbg_o.last_int   <= last_int;
+  nice_dbg_o.rport_dreq <= rport_dreq_i;
+  nice_dbg_o.words_total <= std_logic_vector(words_total(9 downto 0));
+  nice_dbg_o.fetch_first <= fetch_first;
+  nice_dbg_o.fetch_ack   <= fetch_ack;
+  nice_dbg_o.ll_size     <= cur_ll.size(6 downto 0);
+  nice_dbg_o.fetch_pg_words <= std_logic_vector(fetch_pg_words(6 downto 0));
   
 end behavioral;

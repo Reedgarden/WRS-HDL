@@ -49,6 +49,7 @@ use work.wrsw_shared_types_pkg.all;
 use work.wrsw_tru_pkg.all;
 use work.wrsw_tatsu_pkg.all;
 use work.wrs_sdb_pkg.all;
+use work.wrs_dbg_pkg.all;
 
 library UNISIM;
 use UNISIM.vcomponents.all;
@@ -422,6 +423,7 @@ architecture rtl of scb_top_bare is
   signal ep_dbg_tx_pcs_wr_array : t_ep_dbg_tx_pcs_array(g_num_ports-1 downto 0);
   signal ep_dbg_tx_pcs_rd_array : t_ep_dbg_tx_pcs_array(g_num_ports-1 downto 0);
   signal dbg_chps_id          : std_logic_vector(7 downto 0);
+  signal swc_dbg : t_dbg_swc;
   
 begin
 
@@ -829,6 +831,7 @@ begin
         perport_pause_i           => fc_rx_pause,
 
         dbg_o     => dbg_n_regs(32+c_DBG_V_SWCORE-1 downto 32), 
+        nice_dbg_o => swc_dbg,
         
         rtu_rsp_i       => rtu_rsp,
         rtu_ack_o       => swc_rtu_ack,
@@ -1178,5 +1181,39 @@ begin
        T2   <= TRIG2(to_integer(unsigned(dbg_chps_id)));
        T3   <= TRIG3(to_integer(unsigned(dbg_chps_id)));
   end generate;
+
+  -- bank 0
+  TRIG0(0)( 2 downto 0)  <= swc_dbg.mmu.palloc.res_almost_full;
+  TRIG0(0)(13 downto 3)  <= swc_dbg.mmu.palloc.free_pages;
+  TRIG0(0)(14)           <= swc_dbg.mmu.palloc.q_write;
+  TRIG0(0)(15)           <= swc_dbg.mmu.palloc.q_read;
+  TRIG0(0)(18 downto 16) <= swc_dbg.ib(0).alloc_fsm;
+  TRIG0(0)(22 downto 19) <= swc_dbg.ib(0).trans_fsm;
+  TRIG0(0)(26 downto 23) <= swc_dbg.ib(0).rcv_fsm;
+  TRIG0(0)(30 downto 27) <= swc_dbg.ib(0).ll_fsm;
+  TRIG0(0)(31)           <= swc_dbg.ib(0).rtu_valid;
+  TRIG1(0)(2 downto 0)   <= swc_dbg.ib(1).alloc_fsm;
+  TRIG1(0)(6 downto 3)   <= swc_dbg.ib(1).trans_fsm;
+  TRIG1(0)(10 downto 7)  <= swc_dbg.ib(1).rcv_fsm;
+  TRIG1(0)(14 downto 11) <= swc_dbg.ib(1).ll_fsm;
+  TRIG1(0)(15)           <= swc_dbg.ib(1).rtu_valid;
+  TRIG1(0)(18 downto 16) <= swc_dbg.ib(6).alloc_fsm;
+  TRIG1(0)(22 downto 19) <= swc_dbg.ib(6).trans_fsm;
+  TRIG1(0)(26 downto 23) <= swc_dbg.ib(6).rcv_fsm;
+  TRIG1(0)(30 downto 27) <= swc_dbg.ib(6).ll_fsm;
+  TRIG1(0)(31)           <= swc_dbg.ib(6).rtu_valid;
+  TRIG2(0)(2 downto 0)   <= swc_dbg.ib(7).alloc_fsm;
+  TRIG2(0)(6 downto 3)   <= swc_dbg.ib(7).trans_fsm;
+  TRIG2(0)(10 downto 7)  <= swc_dbg.ib(7).rcv_fsm;
+  TRIG2(0)(14 downto 11) <= swc_dbg.ib(7).ll_fsm;
+  TRIG2(0)(15)           <= swc_dbg.ib(7).rtu_valid;
+  TRIG2(0)(19 downto 16) <= swc_dbg.ob(0).send_fsm;
+  TRIG2(0)(23 downto 20) <= swc_dbg.ob(0).prep_fsm;
+  TRIG2(0)(27 downto 24) <= swc_dbg.ob(1).send_fsm;
+  TRIG2(0)(31 downto 28) <= swc_dbg.ob(1).prep_fsm;
+  TRIG3(0)(3 downto 0)   <= swc_dbg.ob(6).send_fsm;
+  TRIG3(0)(7 downto 4)   <= swc_dbg.ob(6).prep_fsm;
+  TRIG3(0)(11 downto 8)  <= swc_dbg.ob(7).send_fsm;
+  TRIG3(0)(15 downto 12) <= swc_dbg.ob(7).prep_fsm;
   
 end rtl;

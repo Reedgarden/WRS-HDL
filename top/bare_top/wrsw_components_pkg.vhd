@@ -41,6 +41,7 @@ use work.wr_fabric_pkg.all;
 use work.wishbone_pkg.all;
 use work.wrsw_txtsu_pkg.all;
 use work.hwinfo_pkg.all;
+use work.wrs_dbg_pkg.all;
 
 package wrsw_components_pkg is
 
@@ -298,6 +299,7 @@ package wrsw_components_pkg is
       perport_pause_i           : in  t_pause_request_array(g_num_ports-1 downto 0);
       shaper_drop_at_hp_ena_i   : in  std_logic := '0';
       dbg_o                     : out std_logic_vector(g_num_dbg_vector_width - 1 downto 0);
+      nice_dbg_o  : out t_dbg_swc;
       rtu_rsp_i      : in t_rtu_response_array(g_num_ports  - 1 downto 0);
       rtu_ack_o      : out std_logic_vector(g_num_ports  - 1 downto 0);
       rtu_abort_o    : out std_logic_vector(g_num_ports  - 1 downto 0);
@@ -356,7 +358,8 @@ package wrsw_components_pkg is
       tru_enabled_i: in std_logic;
       rmon_events_o : out std_logic_vector(g_num_ports*g_rmon_events_bits_pp-1 downto 0);
       wb_i        : in  t_wishbone_slave_in;
-      wb_o        : out t_wishbone_slave_out
+      wb_o        : out t_wishbone_slave_out;
+      nice_dbg_o  : out t_dbg_rtu
       );
   end component;  
 

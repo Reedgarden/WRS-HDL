@@ -51,6 +51,7 @@ library work;
 --use work.swc_swcore_pkg.all;
 use work.genram_pkg.all;
 use work.wrsw_shared_types_pkg.all;
+use work.wrs_dbg_pkg.all;
 
 entity swc_pck_pg_free_module is
   generic( 
@@ -91,7 +92,8 @@ entity swc_pck_pg_free_module is
     mmu_force_free_resource_o       : out std_logic_vector(g_resource_num_width -1 downto 0);
     mmu_force_free_resource_valid_o : out std_logic;
 
-    wdog_o : out t_swc_fsms
+    wdog_o : out t_swc_fsms;
+    nice_dbg_o  : out t_dbg_swc_free
        
     );
 
@@ -144,6 +146,7 @@ architecture syn of swc_pck_pg_free_module is
   signal force_free_resource        : std_logic_vector(g_resource_num_width -1 downto 0);
   signal force_free_resource_valid  : std_logic;
 
+  signal dbg_sv_force : std_logic;
 
 begin  -- syn
 
@@ -244,6 +247,7 @@ fsm_force_free : process(clk_i, rst_n_i)
        force_free_resource       <= (others => '0');
        force_free_resource_valid <= '0';
        --================================================
+       dbg_sv_force <= '0';
      else
 
        -- main finite state machine
@@ -388,6 +392,10 @@ fsm_force_free : process(clk_i, rst_n_i)
            eof                  <= '0';
        end case;
 
+       -- FOR SIMULATION ONLY
+       if(dbg_sv_force='1') then
+         state <= S_READ_NEXT_PAGE_ADDR;
+       end if;
      end if;
    end if;
    
@@ -419,5 +427,20 @@ fsm_force_free : process(clk_i, rst_n_i)
              x"5" when state = S_FORCE_FREE_CURRENT_PAGE_ADDR else
              x"7";
  wdog_o(c_FREE_FSM_IDX) <= free_FSM;
+
+ -- GD Nice Debug
+ nice_dbg_o.free      <= mmu_free;
+ nice_dbg_o.free_done <= mmu_free_done_i;
+ nice_dbg_o.pgadr     <= current_page;
+ nice_dbg_o.ffree     <= mmu_force_free;
+ nice_dbg_o.ffree_done<= mmu_force_free_done_i;
+ nice_dbg_o.fsm       <= free_FSM(2 downto 0);
+ nice_dbg_o.last_ucnt     <= mmu_free_last_usecnt_i;
+ nice_dbg_o.ib_ffree      <= ib_force_free_i;
+ nice_dbg_o.ib_ffree_done <= ib_force_free_done;
+ nice_dbg_o.ib_pgadr      <= ib_force_free_pgaddr_i;
+ nice_dbg_o.ob_free       <= ob_free_i;
+ nice_dbg_o.ob_free_done  <= ob_free_done;
+ nice_dbg_o.ob_pgadr      <= ob_free_pgaddr_i;
  
 end syn;

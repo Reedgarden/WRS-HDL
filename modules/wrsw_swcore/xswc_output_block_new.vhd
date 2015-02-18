@@ -49,6 +49,7 @@
 
 library ieee;
 use ieee.std_logic_1164.all;
+use ieee.std_logic_misc.all;
 use ieee.numeric_std.all;
 use ieee.math_real.CEIL;
 use ieee.math_real.log2;
@@ -60,6 +61,7 @@ use work.wr_fabric_pkg.all;
 use work.endpoint_private_pkg.all;      -- Tom
 use work.ep_wbgen2_pkg.all;             -- tom
 use work.wrsw_shared_types_pkg.all;
+use work.wrs_dbg_pkg.all;
 
 entity xswc_output_block_new is
   generic (
@@ -134,8 +136,10 @@ entity xswc_output_block_new is
 -- debugging
 -------------------------------------------------------------------------------  
     wdog_o  : out t_swc_fsms;
-    tap_out_o : out std_logic_vector(15 downto 0)
-    );
+    tap_out_o : out std_logic_vector(15 downto 0);
+
+    nice_dbg_o : out t_dbg_swc_ob
+  );
 end xswc_output_block_new;
 
 architecture behavoural of xswc_output_block_new is
@@ -281,7 +285,7 @@ architecture behavoural of xswc_output_block_new is
   signal mm_valid         : std_logic;
 
   signal cycle_frozen     : std_logic;
-  signal cycle_frozen_cnt : unsigned(9 downto 0);
+  signal cycle_frozen_cnt : unsigned(11 downto 0);
 
   signal current_tx_prio : std_logic_vector(g_queue_num - 1 downto 0);
   
@@ -323,7 +327,7 @@ architecture behavoural of xswc_output_block_new is
   --    
   -- if FALSE, when a retry requsts comes from EP, it will be handled only if output queues are free
   constant c_always_drop_at_retry : boolean := true;
-  
+
 begin  --  behavoural
 
   wrf_status_err.is_hp       <= '0';
@@ -354,7 +358,8 @@ begin  --  behavoural
           cycle_frozen     <= '0';
         else
           cycle_frozen_cnt <= cycle_frozen_cnt + 1;
-          if(cycle_frozen_cnt = to_unsigned(765,10)) then -- waits max frame size... not good
+          --gd if(cycle_frozen_cnt = to_unsigned(765,10)) then -- waits max frame size... not good
+          if(cycle_frozen_cnt = 3000) then
             cycle_frozen <= '1';
           end if;
         end if;
@@ -1043,5 +1048,19 @@ begin  --  behavoural
  
   wdog_o(c_PREP_FSM_IDX) <= prep_FSM;
   wdog_o(c_SEND_FSM_IDX) <= send_FSM;
+
+  nice_dbg_o.send_fsm <= send_FSM;
+  nice_dbg_o.prep_fsm <= prep_FSM;
+  nice_dbg_o.free <= ppfm_free;
+  nice_dbg_o.free_done <= ppfm_free_done_i;
+  nice_dbg_o.free_adr <= ppfm_free_pgaddr;
+  nice_dbg_o.cycle_frozen <= cycle_frozen;
+  nice_dbg_o.mpm_pgreq  <= mpm_pg_req_i;
+  nice_dbg_o.pta_transfer_valid <= pta_transfer_data_valid_i;
+  nice_dbg_o.pta_pgadr <= pta_pageaddr_i;
+  nice_dbg_o.pta_ack <= pta_transfer_data_ack;
+  nice_dbg_o.obq_full <= not (or_reduce(not_full_array));
+  nice_dbg_o.data_error <= out_dat_err;
+  nice_dbg_o.mpm_dlast <= mpm_dlast_i;
 
 end behavoural;

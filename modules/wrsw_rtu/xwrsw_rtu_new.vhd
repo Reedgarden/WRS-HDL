@@ -129,6 +129,7 @@ use work.pack_unpack_pkg.all;
 use work.genram_pkg.all;
 use work.rtu_wbgen2_pkg.all;
 use work.gencores_pkg.all;
+use work.wrs_dbg_pkg.all;
 
 entity xwrsw_rtu_new is
   
@@ -160,7 +161,8 @@ entity xwrsw_rtu_new is
     tru_enabled_i: in std_logic;
     rmon_events_o : out std_logic_vector(g_num_ports*g_rmon_events_bits_pp-1 downto 0);
     wb_i        : in  t_wishbone_slave_in;
-    wb_o        : out t_wishbone_slave_out
+    wb_o        : out t_wishbone_slave_out;
+    nice_dbg_o  : out t_dbg_rtu
     );
 
 end xwrsw_rtu_new;
@@ -378,7 +380,8 @@ begin
 --         rtu_pcr_pass_bpdu_i      => pcr_pass_bpdu,
 --         rtu_pcr_pass_all_i       => pcr_pass_all,
         rtu_pcr_fix_prio_i       => pcr_fix_prio(i),
-        rtu_pcr_prio_val_i       => pcr_prio_val(i)
+        rtu_pcr_prio_val_i       => pcr_prio_val(i),
+        nice_dbg_o   => nice_dbg_o.rport(i)
         );
         
         -- NOTE: inside {fast,full}_match we also take into account the priority assigned to VLAN,

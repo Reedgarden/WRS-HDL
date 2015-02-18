@@ -39,6 +39,7 @@ use work.mpm_private_pkg.all;
 
 use work.gencores_pkg.all;              -- for f_rr_arbitrate
 use work.genram_pkg.all;                -- for f_log2_size
+use work.wrs_dbg_pkg.all;
 
 entity mpm_read_path is
   
@@ -81,7 +82,9 @@ entity mpm_read_path is
 
     -- F. B. Memory I/F
     fbm_addr_o : out std_logic_vector(f_log2_size(g_num_pages * g_page_size / g_ratio)-1 downto 0);
-    fbm_data_i : in  std_logic_vector(g_ratio * g_data_width -1 downto 0)
+    fbm_data_i : in  std_logic_vector(g_ratio * g_data_width -1 downto 0);
+
+    nice_dbg_o : out t_dbg_mpm_read
     );
 
 end mpm_read_path;
@@ -121,7 +124,8 @@ architecture rtl of mpm_read_path is
       df_empty_i       : in  std_logic;
       df_flush_o       : out std_logic;
       df_rd_o          : out std_logic;
-      df_d_i           : in  std_logic_vector(g_data_width-1 downto 0));
+      df_d_i           : in  std_logic_vector(g_data_width-1 downto 0);
+      nice_dbg_o       : out t_dbg_mpm_read_io);
   end component;
 
   component mpm_rpath_core_block
@@ -232,6 +236,8 @@ architecture rtl of mpm_read_path is
   signal fifos_rst_n_core        : std_logic_vector (g_num_ports-1 downto 0); -- ML-added
   signal logic_rst_n_core        : std_logic_vector (g_num_ports-1 downto 0); -- ML-added
   signal rport_abort_d           : std_logic_vector (g_num_ports-1 downto 0); -- ML-added
+
+  signal ll_addr_out : std_logic_vector(g_page_addr_width-1 downto 0);
 begin  -- rtl
 
   --ML: process to register abort (produce resets of differnt width)
@@ -409,17 +415,18 @@ begin  -- rtl
   begin
     if rising_edge(clk_io_i) then
       if rst_n_io_i = '0' then
-        ll_addr_o <= (others => '0');
+        ll_addr_out <= (others => '0');
       else
         for i in 0 to g_num_ports-1 loop
           if(io(i).ll_grant = '1') then
             muxed := io(i).ll_addr;
           end if;
         end loop; 
-        ll_addr_o <= muxed;
+        ll_addr_out <= muxed;
       end if;
     end if;
   end process;
+  ll_addr_o <= ll_addr_out;
 
   gen_io_core_blocks : for i in 0 to g_num_ports-1 generate
 
@@ -477,11 +484,14 @@ begin  -- rtl
         df_empty_i       => io(i).df_empty,
         df_flush_o       => io(i).df_flush,
         df_rd_o          => io(i).df_rd,
-        df_d_i           => io(i).df_q);
+        df_d_i           => io(i).df_q,
+        nice_dbg_o       => nice_dbg_o.io(i));
 
     io(i).pf_d <= io(i).pf_pg_lines & io(i).pf_fbm_addr;
     core(i).pf_fbm_addr <= core(i).pf_q(c_fbm_addr_width-1 downto 0);
     core(i).pf_pg_lines <= core(i).pf_q(c_fbm_addr_width + c_line_size_width-1 downto c_fbm_addr_width);
   end generate gen_io_core_blocks;
+
+  nice_dbg_o.ll_adr <= ll_addr_out;
   
 end rtl;

@@ -63,6 +63,7 @@ use work.rtu_private_pkg.all;
 use work.genram_pkg.all;
 use work.wrsw_shared_types_pkg.all;
 use work.pack_unpack_pkg.all;
+use work.wrs_dbg_pkg.all;
 
 entity rtu_port_new is
   generic(
@@ -131,7 +132,8 @@ entity rtu_port_new is
     rtu_pcr_pass_bpdu_i       : in std_logic;
     rtu_pcr_pass_all_i        : in std_logic;
     rtu_pcr_fix_prio_i        : in std_logic;
-    rtu_pcr_prio_val_i        : in std_logic_vector(c_wrsw_prio_width - 1 downto 0)
+    rtu_pcr_prio_val_i        : in std_logic_vector(c_wrsw_prio_width - 1 downto 0);
+    nice_dbg_o  : out t_dbg_rtu_port
     );
 
 end rtu_port_new;
@@ -227,6 +229,8 @@ architecture behavioral of rtu_port_new is
     ff        => '0',
     hp        => '0');
 
+
+  signal dbg_fwd_mask : std_logic_vector(3 downto 0);
 
 begin
 
@@ -746,6 +750,13 @@ begin
   --                  4) fast match decision only 
                          fast_match.port_mask;
 
+  dbg_fwd_mask        <= x"1" when (dbg_force_fast_match_only = '1') else
+                         x"2" when (dbg_force_full_match_only = '1') else
+                         x"3" when (full_match.valid = '1' and full_match.nf ='1') else
+                         x"4" when (full_match.valid = '1') else
+                         x"5" when (full_match_aboard_d = '1' and rtu_str_config_i.dop_on_fmatch_full = '0' ) else
+                         x"0";
+
   -- forming final drop:
   --                  d) for debugging: forcing to have only fast match
   drop                <= fast_match.drop when (dbg_force_fast_match_only = '1') else
@@ -812,5 +823,27 @@ begin
   fast_match_wr_req_o <= '0'               when  (dbg_force_full_match_only = '1') else
                          fast_match_wr_req;
   fast_match_wr_data_o<= rtu_req_d;   
+
+  ----------- DEBUG STUFF -----------------
+  nice_dbg_o.fsm <= "000" when(port_state = S_IDLE) else
+                    "001" when(port_state = S_FAST_MATCH) else
+                    "010" when(port_state = S_FULL_MATCH) else
+                    "011" when(port_state = S_FINAL_MASK) else
+                    "100" when(port_state = S_RESPONSE) else
+                    "111";
+  nice_dbg_o.rsp_valid <= rsp.valid;
+  nice_dbg_o.rsp_ack   <= rtu_rsp_ack_i;
+  nice_dbg_o.full_match_full  <= full_match_wr_full_i;
+  nice_dbg_o.full_match_wr    <= full_match_wr_req;
+  nice_dbg_o.full_match_done  <= full_match_wr_done_i;
+
+  nice_dbg_o.fast_match_wr    <= fast_match_wr_req;
+  nice_dbg_o.fast_rd_valid    <= fast_match_rd_valid;
+  nice_dbg_o.full_valid       <= full_match_valid;
+  nice_dbg_o.full_aboard_d    <= full_match_aboard_d;
+  nice_dbg_o.new_req_at_full_rsp <= new_req_at_full_match_rsp_d;
+  nice_dbg_o.rq_valid         <= rtu_rq_i.valid;
+  nice_dbg_o.fast_valid_reg   <= fast_valid_reg;
+  nice_dbg_o.full_valid_reg   <= full_valid_reg;
 
 end architecture;  --wrsw_rtu_port
