@@ -426,6 +426,7 @@ architecture syn of xswc_input_block is
   signal in_pck_sof          : std_logic;  -- start of frame
   signal in_pck_sof_reg      : std_logic;
   signal in_pck_sof_reg_ack  : std_logic;
+  signal in_pck_sof_rcv_reg  : std_logic;
   signal in_pck_eof          : std_logic;  -- end of frame
   signal in_pck_err          : std_logic;  -- error
   signal in_pck_eod          : std_logic;  -- end of data
@@ -836,6 +837,7 @@ begin  --archS_PCKSTART_SET_AND_REQ
 
         rp_rcv_first_page    <= '0';
         rtu_rsp_abort_o      <= '0';
+        in_pck_sof_rcv_reg   <= '0';
         --========================================
         rcv_pckstart_new <= '0';
       else
@@ -871,6 +873,10 @@ begin  --archS_PCKSTART_SET_AND_REQ
             in_pck_dat_d0     <= (others => '0');
             rtu_rsp_abort_o   <= '0';
             rp_drop_no_ff     <= '0';
+            if(in_pck_sof = '1') then
+              -- in case we have SOF, we have to keep it for S_READY
+              in_pck_sof_rcv_reg  <= in_pck_sof;
+            end if;
 
             -- Sync with trasnfer_pck FSM and ll_write FSM: 
             if(lw_sync_first_stage = '1' and tp_sync = '1') then
@@ -915,8 +921,9 @@ begin  --archS_PCKSTART_SET_AND_REQ
             --===========================================================================================
             in_pck_dvalid_d0 <= '0';
             in_pck_dat_d0    <= (others => '0');
+            in_pck_sof_rcv_reg <= '0';
 
-            if (in_pck_sof = '1') then
+            if (in_pck_sof = '1' or in_pck_sof_rcv_reg='1') then
               
               if(tp_drop = '1') then
                 s_rcv_pck         <= S_DROP;
