@@ -273,6 +273,7 @@ package wrsw_top_pkg is
       g_with_HWIU       : boolean  := false;
       g_with_PSTATS     : boolean := true;
       g_with_muxed_CS   : boolean := false;
+      g_with_watchdog   : boolean := false;
       g_inj_per_EP      : std_logic_vector(17 downto 0) := (others=>'0'));
     port (
       sys_rst_n_i         : in  std_logic;
@@ -358,7 +359,8 @@ package wrsw_top_pkg is
       nice_dbg_o  : out t_dbg_swc;
       rtu_rsp_i      : in t_rtu_response_array(g_num_ports  - 1 downto 0);
       rtu_ack_o      : out std_logic_vector(g_num_ports  - 1 downto 0);
-      rtu_abort_o    : out std_logic_vector(g_num_ports  - 1 downto 0)
+      rtu_abort_o    : out std_logic_vector(g_num_ports  - 1 downto 0);
+      nomem_o        : out std_logic
       );
   end component;
 
@@ -438,6 +440,25 @@ package wrsw_top_pkg is
   
       wb_i : in  t_wishbone_slave_in;
       wb_o : out t_wishbone_slave_out );
+  end component;
+
+  component xwrsw_watchdog
+    generic(
+      g_num_ports : integer := 18);
+    port(
+      rst_n_i : in  std_logic;
+      clk_i   : in  std_logic;
+      force_rst_i : in  std_logic;
+      swc_nomem_i : in  std_logic;
+      restart_cnt_o : out std_logic_vector(31 downto 0);
+      swcrst_n_o  : out std_logic;
+      epstop_o    : out std_logic;
+      rtu_ack_i   : in  std_logic_vector(g_num_ports-1 downto 0);
+      rtu_ack_o   : out std_logic_vector(g_num_ports-1 downto 0);
+      snk_i       : in  t_wrf_sink_in_array(g_num_ports-1 downto 0);
+      snk_o       : out t_wrf_sink_out_array(g_num_ports-1 downto 0);
+      src_o       : out t_wrf_source_out_array(g_num_ports-1 downto 0);
+      src_i       : in  t_wrf_source_in_array(g_num_ports-1 downto 0));
   end component;
 
   component xwrsw_hwdu
