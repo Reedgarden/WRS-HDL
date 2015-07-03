@@ -615,6 +615,20 @@ begin  -- syn
     end generate gen_res_out;
   end generate gen_RESOURCE_MGR;  
 
+  nice_dbg_o.p0_req_alloc <= ports(0).req_alloc;
+  nice_dbg_o.p1_req_alloc <= ports(1).req_alloc;
+  nice_dbg_o.p6_req_alloc <= ports(6).req_alloc;
+  nice_dbg_o.p7_req_alloc <= ports(7).req_alloc;
+  nice_dbg_o.p0_arb_req   <= arb_req(0);
+  nice_dbg_o.p0_arb_grant <= arb_grant(0);
+  nice_dbg_o.p1_arb_req   <= arb_req(2);
+  nice_dbg_o.p1_arb_grant <= arb_grant(2);
+  nice_dbg_o.p6_arb_req   <= arb_req(12);
+  nice_dbg_o.p6_arb_grant <= arb_grant(12);
+  nice_dbg_o.p7_arb_req   <= arb_req(14);
+  nice_dbg_o.p7_arb_grant <= arb_grant(14);
+  nice_dbg_o.grant_ib_d0  <= grant_ib_d0;
+
   --------------------------------------------------------------------------------------------------
 
 --   tap_out_o <= f_slv_resize

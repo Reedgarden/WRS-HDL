@@ -50,6 +50,7 @@ library work;
 use work.swc_swcore_pkg.all;
 use work.genram_pkg.all;
 use work.gencores_pkg.all;
+use work.wrs_dbg_pkg.all;
 
 entity swc_multiport_linked_list is
   generic ( 
@@ -108,7 +109,9 @@ entity swc_multiport_linked_list is
     -- requested address,  needs to be valid till write_done_o=HIGH
     mpm_rpath_addr_i      : in  std_logic_vector(g_addr_width - 1 downto 0);
     -- requested data
-    mpm_rpath_data_o      : out std_logic_vector(g_data_width - 1 downto 0)
+    mpm_rpath_data_o      : out std_logic_vector(g_data_width - 1 downto 0);
+
+    nice_dbg_o : out t_dbg_swc_mll
     );
 
 end swc_multiport_linked_list;
@@ -385,7 +388,8 @@ begin  -- syn
       write_data_ready_i   => ll_write_ena, 
 
       read_data_o          => free_pck_data_o((i+1)*g_data_width - 1 downto i*g_data_width), --free_pck_data_out(i),--(g_data_width - 2 downto 0),
-      read_data_valid_o    => free_pck_read_done_o(i)                                        --free_pck_read_done(i)
+      read_data_valid_o    => free_pck_read_done_o(i),                                       --free_pck_read_done(i)
+      nice_dbg_o           => nice_dbg_o.rv(i)
     );
 
 --    free_pck_data_o     ((i+1)*g_data_width - 1 downto i*g_data_width) <= free_pck_data_out(i)(g_data_width - 1 downto 0);
@@ -424,5 +428,6 @@ begin  -- syn
                            '0';   
   end generate;
  
+  nice_dbg_o.fpck_grant_d1(g_num_ports-1 downto 0) <= free_pck_grant_vec_d1(g_num_ports-1 downto 0);
   
 end syn;

@@ -42,6 +42,8 @@ use ieee.std_logic_1164.all;
 use ieee.math_real.CEIL;
 use ieee.math_real.log2;
 
+use work.wrs_dbg_pkg.all;
+
 package mpm_pkg is
 
   component mpm_top is
@@ -82,7 +84,8 @@ package mpm_pkg is
     rport_pg_req_o   : out std_logic_vector (g_num_ports-1 downto 0);
 
     ll_addr_o : out std_logic_vector(g_page_addr_width-1 downto 0);
-    ll_data_i : in  std_logic_vector(g_ll_data_width  -1 downto 0)
+    ll_data_i : in  std_logic_vector(g_ll_data_width  -1 downto 0);
+    nice_dbg_o  : out t_dbg_mpm
     );
    end component; 
 

@@ -90,6 +90,7 @@
 
 library ieee;
 use ieee.std_logic_1164.all;
+use ieee.std_logic_misc.all;
 use ieee.numeric_std.all;
 use ieee.math_real.CEIL;
 use ieee.math_real.log2;
@@ -685,6 +686,18 @@ constant c_force_usecnt             : boolean :=  TRUE;
   
   signal dbg_dropped_on_res_full    : std_logic;
 
+  signal dbg_allocreq_cnt : unsigned(13 downto 0);
+  signal dbg_drop_cnt : unsigned (11 downto 0);
+  signal dbg_wait_cnt : unsigned (11 downto 0);
+  signal dbg_last_ffreed_pg : std_logic_vector(g_page_addr_width-1 downto 0);
+
+  signal dbg_newframe : std_logic;
+  signal dbg_rtu_rsp_cnt  : unsigned(7 downto 0);
+  signal dbg_sof_cnt  : unsigned(7 downto 0);
+  signal dbg_sof_cnt_ack : std_logic;
+  signal dbg_diff_cnt : unsigned(11 downto 0);
+  signal dbg_bare_sof : unsigned(7 downto 0);
+
 begin  --archS_PCKSTART_SET_AND_REQ
   
   zeros                      <= (others => '0');
@@ -844,6 +857,9 @@ begin  --archS_PCKSTART_SET_AND_REQ
         in_pck_sof_rcv_reg   <= '0';
         --========================================
         rcv_pckstart_new <= '0';
+        dbg_newframe <= '0';
+        dbg_sof_cnt <= (others=>'0');
+        dbg_sof_cnt_ack <= '0';
       else
 
         -- default values:
@@ -866,6 +882,7 @@ begin  --archS_PCKSTART_SET_AND_REQ
           new_pck_first_page <= '0';
         end if;
         new_pck_first_page_p1<= '0';
+        dbg_newframe <= '0';
 
         case s_rcv_pck is
           --===========================================================================================
@@ -877,6 +894,7 @@ begin  --archS_PCKSTART_SET_AND_REQ
             in_pck_dat_d0     <= (others => '0');
             rtu_rsp_abort_o   <= '0';
             rp_drop_no_ff     <= '0';
+            dbg_sof_cnt_ack   <= '0';
             if(in_pck_sof = '1') then
               -- in case we have SOF, we have to keep it for S_READY
               in_pck_sof_rcv_reg  <= in_pck_sof;
@@ -902,8 +920,10 @@ begin  --archS_PCKSTART_SET_AND_REQ
               if(mmu_force_free_req = '1') then  -- it means that the previous request is still 
                                                  -- waiting to be accepted, which is a very bad sign
                 s_rcv_pck <= S_WAIT_FORCE_FREE;
+                dbg_newframe <= '1';
               else
                 mmu_force_free_req <= '1';
+                dbg_newframe <= '1';
               end if;
 
               -- transfer seems stcuk
@@ -930,10 +950,12 @@ begin  --archS_PCKSTART_SET_AND_REQ
             if (in_pck_sof = '1' or in_pck_sof_rcv_reg='1') then
               
               if(tp_drop = '1') then
+                dbg_newframe <= '1';
                 s_rcv_pck         <= S_DROP;
                 rp_drop_no_ff     <= '1';
                 snk_stall_force_l <= '0';
               else
+                dbg_newframe <= '1';
                 rcv_pckstart_new          <= '1';
                 current_pckstart_pageaddr <= pckstart_pageaddr;
                 current_pckstart_usecnt   <= pckstart_usecnt;
@@ -953,6 +975,10 @@ begin  --archS_PCKSTART_SET_AND_REQ
             --===========================================================================================
           when S_RCV_DATA =>
             --===========================================================================================
+            if(dbg_sof_cnt_ack = '0') then
+              dbg_sof_cnt <= dbg_sof_cnt + 1;
+              dbg_sof_cnt_ack <= '1';
+            end if;
             rcv_pckstart_new <= '0';
             -- to extend the span of new_pck_first_page into s_ll_write = S_IDLE, when there is S_SOF
             if(in_pck_dvalid = '1') then
@@ -1116,6 +1142,10 @@ begin  --archS_PCKSTART_SET_AND_REQ
             --===========================================================================================
           when S_DROP =>
             --===========================================================================================
+            if(dbg_sof_cnt_ack = '0') then
+              dbg_sof_cnt <= dbg_sof_cnt + 1;
+              dbg_sof_cnt_ack <= '1';
+            end if;
             
 
             if (in_pck_eof = '1' or in_pck_err = '1') then
@@ -1598,6 +1628,7 @@ begin
       current_prio      <= (others => '0');
       current_usecnt    <= (others => '0');
       rtu_rsp_ack       <= '0';
+      dbg_rtu_rsp_cnt   <= (others=>'0');
       --========================================
     else
       -- remember input rtu decision
@@ -1612,6 +1643,7 @@ begin
         current_usecnt    <= rtu_dst_port_usecnt;
 
         rtu_rsp_ack <= '1';
+        dbg_rtu_rsp_cnt <= dbg_rtu_rsp_cnt + 1;
       else
         rtu_rsp_ack <= '0';
       end if;
@@ -1874,7 +1906,7 @@ begin
               s_transfer_pck <= S_DROP;
               
             -- there is no resources available so the set_usecnt operation was not successfull
-            -- we need to drop the pck
+            -- we need to drop the pck. If resource manager is not used, succeeded_i is always '1'
             elsif(mmu_set_usecnt_succeeded_i = '0') then
               s_transfer_pck <= S_DROP;
             else
@@ -2624,12 +2656,173 @@ dbg_dropped_on_res_full <= pckstart_usecnt_req and mmu_set_usecnt_done_i and (no
 dbg_pckstart_pageaddr_o <= pckstart_pageaddr;
 dbg_pckinter_pageaddr_o <= pckinter_pageaddr;
 
+  process(clk_i, rst_n_i)
+  begin
+    if rising_edge(clk_i) then
+      if (rst_n_i='0' or mmu_page_alloc_done_i='1') then
+        nice_dbg_o.rcv_stuck <= '0';
+        dbg_allocreq_cnt <= (others=> '0');
+      elsif(pckstart_page_alloc_req = '1' or pckinter_page_alloc_req = '1') then
+        if(dbg_allocreq_cnt < 4000) then
+          dbg_allocreq_cnt <= dbg_allocreq_cnt + 1;
+        else
+          nice_dbg_o.rcv_stuck <= '1';
+        end if;
+      end if;
+    end if;
+  end process;
+
+  process(clk_i, rst_n_i)
+  begin
+    if rising_edge(clk_i) then
+      if (rst_n_i='0') then
+        nice_dbg_o.tr_wait_stuck <= '0';
+        dbg_drop_cnt  <= (others=>'0');
+      elsif(s_transfer_pck = S_WAIT_RTU_VALID) then
+        if(dbg_drop_cnt < 2000) then
+          dbg_drop_cnt <= dbg_drop_cnt + 1;
+        else
+          nice_dbg_o.tr_wait_stuck <= '1';
+        end if;
+      elsif(s_transfer_pck /= S_WAIT_RTU_VALID) then
+        nice_dbg_o.tr_wait_stuck <= '0';
+        dbg_drop_cnt <= (others=>'0');
+      end if;
+    end if;
+  end process;
+
+  process(clk_i, rst_n_i)
+  begin
+    if rising_edge(clk_i) then
+      if (rst_n_i='0') then
+        nice_dbg_o.tr_drop_stuck <= '0';
+        dbg_wait_cnt  <= (others=>'0');
+      elsif(s_transfer_pck = S_DROP) then
+        if(dbg_wait_cnt < 2000) then
+          dbg_wait_cnt <= dbg_wait_cnt + 1;
+        else
+          nice_dbg_o.tr_drop_stuck <= '1';
+        end if;
+      elsif(s_transfer_pck /= S_DROP) then
+        nice_dbg_o.tr_drop_stuck <= '0';
+        dbg_wait_cnt <= (others=>'0');
+      end if;
+    end if;
+  end process;
+
+  process(clk_i, rst_n_i)
+  begin
+    if rising_edge(clk_i) then
+      if (rst_n_i = '0' or pckstart_pageaddr /= mmu_force_free_addr) then
+        dbg_last_ffreed_pg <= (others=>'1');
+      elsif(mmu_force_free_req = '1' and mmu_force_free_done_i = '1') then
+        dbg_last_ffreed_pg <= mmu_force_free_addr;
+      end if;
+    end if;
+  end process;
+
+  process(clk_i)
+  begin
+    if rising_edge(clk_i) then
+      if (rst_n_i='0') then
+        dbg_diff_cnt <= (others=>'0');
+        nice_dbg_o.rtu_sof_bug <= '0';
+      elsif((dbg_sof_cnt > dbg_rtu_rsp_cnt or dbg_rtu_rsp_cnt>dbg_sof_cnt) and
+             s_page_alloc/=S_PCKSTART_PAGE_REQ and s_page_alloc/=S_PCKINTER_PAGE_REQ) then
+        dbg_diff_cnt <= dbg_diff_cnt + 1;
+        if(dbg_diff_cnt = 1000) then
+          nice_dbg_o.rtu_sof_bug <= '1';
+        end if;
+      elsif(dbg_sof_cnt = dbg_rtu_rsp_cnt and s_page_alloc/=S_PCKSTART_PAGE_REQ and s_page_alloc/=S_PCKINTER_PAGE_REQ) then
+        dbg_diff_cnt <= (others=>'0');
+      end if;
+    end if;
+  end process;
+
+  process(clk_i)
+  begin
+    if rising_edge(clk_i) then
+      if (rst_n_i='0') then
+        dbg_bare_sof <= (others=>'0');
+      elsif(snk_cyc_int = '1' and snk_cyc_d0 = '0') then
+        dbg_bare_sof <= dbg_bare_sof + 1;
+      end if;
+    end if;
+  end process;
+
+  nice_dbg_o.pages_same <= '1' when (pckstart_pageaddr = pckinter_pageaddr and
+                                     pckstart_pageaddr /= dbg_last_ffreed_pg) else
+                           '0';
+
   nice_dbg_o.rtu_valid <= rtu_rsp_valid_i;
+  nice_dbg_o.rtu_ack   <= rtu_rsp_ack;
   nice_dbg_o.alloc_fsm <= alloc_FSM(2 downto 0);
   nice_dbg_o.trans_fsm <= trans_FSM;
   nice_dbg_o.rcv_fsm   <= rcv_p_FSM;
   nice_dbg_o.ll_fsm    <= linkl_FSM;
+  nice_dbg_o.mem_full_dump <= mem_full_dump;
+  nice_dbg_o.finish_rcv <= finish_rcv_pck;
+  nice_dbg_o.force_free <= mmu_force_free_req;
+  nice_dbg_o.force_free_done <= mmu_force_free_done_i;
+  nice_dbg_o.force_free_adr  <= mmu_force_free_addr;
+  nice_dbg_o.pckstart_in_adv <= pckstart_page_in_advance;
+  nice_dbg_o.pckinter_in_adv <= pckinter_page_in_advance;
 
+  nice_dbg_o.ll_wr         <= ll_wr_req;
+  nice_dbg_o.ll_wr_done    <= ll_wr_done_i;
+  nice_dbg_o.ll_page       <= ll_entry.addr;
+  nice_dbg_o.ll_next_page  <= ll_entry.next_page;
+  nice_dbg_o.ll_page_valid <= ll_entry.valid;
+  nice_dbg_o.ll_eof        <= ll_entry.eof;
+  nice_dbg_o.ll_size       <= ll_entry.size;
+  nice_dbg_o.alloc_req     <= pckinter_page_alloc_req or
+                              pckstart_page_alloc_req;
+  nice_dbg_o.alloc_done    <= mmu_page_alloc_done_i;
+  nice_dbg_o.alloc_page    <= mmu_pageaddr_i;
+  nice_dbg_o.page_start    <= pckstart_pageaddr;
+  nice_dbg_o.page_inter    <= pckinter_pageaddr;
+  nice_dbg_o.cur_pckstart  <= current_pckstart_pageaddr;
+
+  nice_dbg_o.pta_pgadr     <= pta_pageaddr;
+  nice_dbg_o.pta_transfer  <= pta_transfer_pck;
+  nice_dbg_o.pta_mask      <= pta_mask(7 downto 0);
+  nice_dbg_o.pta_transfer_ack <= pta_transfer_ack_i;
+  nice_dbg_o.pck_sof       <= in_pck_sof;
+  nice_dbg_o.pck_eof       <= in_pck_eof;
+  nice_dbg_o.pck_err       <= in_pck_err;
+  nice_dbg_o.cyc           <= snk_cyc_int;
+  nice_dbg_o.stb           <= snk_stb_int;
+  nice_dbg_o.ack           <= snk_ack_int;
+  nice_dbg_o.stall         <= snk_stall_int;
+  nice_dbg_o.mpm_dlast_d0  <= mpm_dlast_reg;
+  nice_dbg_o.mpm_pg_req_d0 <= mpm_pg_req_d0;
+  nice_dbg_o.mpm_pg_adr    <= mpm_pg_addr;
+  nice_dbg_o.ll_pckstart_stored <= ll_stored_eof;
+  nice_dbg_o.ffree_mask    <= ffree_mask;
+  nice_dbg_o.new_pck_first_page <= new_pck_first_page;
+  nice_dbg_o.rp_rcv_fpage  <= rp_rcv_first_page;
+  nice_dbg_o.rp_ll_entry_size <= rp_ll_entry_size;
+  nice_dbg_o.in_pck_dvalid <= in_pck_dvalid;
+  nice_dbg_o.page_word_cnt  <= std_logic_vector(page_word_cnt);
+  nice_dbg_o.mpm_dvalid     <= mpm_dvalid;
+  nice_dbg_o.mpm_data       <= mpm_data;
+  nice_dbg_o.sof_on_stall   <= in_pck_sof_on_stall;
+  nice_dbg_o.sof_delayed    <= in_pck_sof_delayed;
+  nice_dbg_o.sof_normal     <= in_pck_sof_allowed;
+  nice_dbg_o.rtu_hp         <= rtu_hp_i;
+  nice_dbg_o.current_drop   <= current_drop;
+  nice_dbg_o.res_info_almost_full <= res_info_almsot_full;
+  nice_dbg_o.almost_full_i  <= or_reduce(mmu_res_almost_full_i);
+  nice_dbg_o.rtu_rsp_cnt    <= std_logic_vector(dbg_rtu_rsp_cnt);
+  nice_dbg_o.sof_cnt        <= std_logic_vector(dbg_sof_cnt);
+  nice_dbg_o.dbg_bare_sof   <= std_logic_vector(dbg_bare_sof);
+  nice_dbg_o.pck_sof_reg    <= in_pck_sof_reg;
+  nice_dbg_o.pck_sof_ack    <= in_pck_sof_reg_ack;
+  nice_dbg_o.eof_normal     <= in_pck_eof_normal;
+  nice_dbg_o.eof_on_pause   <= in_pck_eof_on_pause;
+  nice_dbg_o.pck_sof_rcv_reg <= in_pck_sof_rcv_reg;
+  nice_dbg_o.accept_rtu     <= rp_accept_rtu;
+  nice_dbg_o.pcknew_reg     <= pcknew_reg;
 
 -- tap_out_o <= f_slv_resize(              -- 
 --  -- f_enum2nat(s_rcv_pck) &               --

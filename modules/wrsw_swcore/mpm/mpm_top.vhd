@@ -41,6 +41,7 @@ use work.gencores_pkg.all;              -- for f_rr_arbitrate
 use work.genram_pkg.all;                -- for f_log2_size
 
 use work.mpm_private_pkg.all;
+use work.wrs_dbg_pkg.all;
 
 entity mpm_top is
   generic (
@@ -84,7 +85,9 @@ entity mpm_top is
     rport_pg_req_o   : out std_logic_vector (g_num_ports-1 downto 0);
 
     ll_addr_o : out std_logic_vector(g_page_addr_width-1 downto 0);
-    ll_data_i : in  std_logic_vector(g_ll_data_width  -1 downto 0)
+    ll_data_i : in  std_logic_vector(g_ll_data_width  -1 downto 0);
+
+    nice_dbg_o  : out t_dbg_mpm
     );
 
 end mpm_top;
@@ -150,7 +153,8 @@ architecture rtl of mpm_top is
       ll_addr_o        : out std_logic_vector(g_page_addr_width-1 downto 0);
       ll_data_i        : in  std_logic_vector(g_ll_data_width  -1 downto 0);
       fbm_addr_o       : out std_logic_vector(f_log2_size(g_num_pages * g_page_size / g_ratio)-1 downto 0);
-      fbm_data_i       : in  std_logic_vector(g_ratio * g_data_width -1 downto 0));
+      fbm_data_i       : in  std_logic_vector(g_ratio * g_data_width -1 downto 0);
+      nice_dbg_o       : out t_dbg_mpm_read);
   end component;
 
   signal fbm_wr_addr, fbm_rd_addr : std_logic_vector(f_log2_size(g_num_pages * g_page_size / g_ratio)-1 downto 0);
@@ -234,7 +238,8 @@ begin  -- rtl
       ll_addr_o        => ll_addr_o,
       ll_data_i        => ll_data_i,
       fbm_addr_o       => fbm_rd_addr,
-      fbm_data_i       => fbm_rd_data);
+      fbm_data_i       => fbm_rd_data,
+      nice_dbg_o       => nice_dbg_o.read);
 
 
   -- The Frame Buffer Memory (F.B.M.), Formerly known as F.... Big Memory

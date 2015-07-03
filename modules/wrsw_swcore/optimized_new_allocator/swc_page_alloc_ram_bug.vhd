@@ -75,6 +75,7 @@
 
 library ieee;
 use ieee.std_logic_1164.all;
+use ieee.std_logic_misc.all;
 use ieee.numeric_std.all;
 
 use work.swc_swcore_pkg.all;
@@ -264,6 +265,7 @@ architecture syn of swc_page_allocator_new is
   signal res_mgr_rescnt_set      : std_logic;
   signal set_usecnt_allowed_p1   : std_logic;
   signal res_almost_full         : std_logic_vector(g_resource_num      -1 downto 0);
+  signal res_full                : std_logic_vector(g_resource_num      -1 downto 0);
   -----------------------------
   
   signal pg_adv_valid : std_logic;
@@ -304,6 +306,8 @@ architecture syn of swc_page_allocator_new is
     free_res_valid  => '0',
     rescnt_page_num => (others => '0'));
    
+  signal dbg_trig : std_logic;
+  signal dbg_alloc_done : std_logic;
 
 begin  -- syn
   ram_ones                    <= (others => '1');
@@ -513,13 +517,16 @@ begin  -- syn
     end if;
   end process;  
 
+  dbg_alloc_done <= '1' when (alloc_req_d0.alloc = '1' and out_nomem_d1 = '0')
+                    else '0';
+
   p_gen_done : process(clk_i)
   begin
     if rising_edge(clk_i) then
       if (rst_n_i = '0') or (initializing = '1') then
         done_p1 <= '0';
       else
-        if(((alloc_req_d0.alloc      = '1'  and pg_adv_valid      = '1') or 
+        if(((alloc_req_d0.alloc      = '1'  and pg_adv_valid = '1') or 
              alloc_req_d0.set_usecnt = '1'  or  alloc_req_d0.free = '1'  or 
              alloc_req_d0.f_free     = '1') and initializing      = '0') then
           done_p1 <= '1';
@@ -538,7 +545,9 @@ begin  -- syn
       else
         if(out_nomem = '0' and (free_pages < to_unsigned(3, free_blocks'length))) then
           out_nomem <= '1';
+        --GD
         elsif(out_nomem = '1' and (free_pages > to_unsigned((3*g_num_ports), free_blocks'length))) then
+        --elsif(out_nomem = '1' and (free_pages > to_unsigned(10, free_blocks'length))) then
           out_nomem <= real_nomem;
         end if;
       end if;
@@ -559,11 +568,12 @@ begin  -- syn
   gen_no_RESOURCE_MGR: if (g_with_RESOURCE_MGR = false) generate
     resource_o                                                  <= (others => '0');
     set_usecnt_succeeded_o                                      <= '1';
-    res_full_o                                                  <= (others => std_logic(out_nomem or initializing));
+    res_full                                                    <= (others => std_logic(out_nomem or initializing));
     dbg_o (g_page_addr_width+1-1 downto 0)                      <= std_logic_vector(free_pages); 
     dbg_o (g_num_dbg_vector_width-1 downto g_page_addr_width+1) <= (others =>'0'); 
     set_usecnt_allowed_p1                                       <= '1';
     res_almost_full_o <= res_almost_full;
+    res_full_o        <= res_full;
 
     p_gen_almost_full : process(clk_i)
     begin
@@ -571,7 +581,9 @@ begin  -- syn
         if rst_n_i = '0' then
           res_almost_full <= (others => '0');
         else
+          --GD
           if(free_pages < to_unsigned(40, free_blocks'length) ) then
+          --if(free_pages < to_unsigned(15, free_blocks'length) ) then
             res_almost_full <= (others => '1');
           else
             res_almost_full <= (others => '0');
@@ -646,7 +658,20 @@ begin  -- syn
   end generate;
 
   nice_dbg_o.free_pages      <= std_logic_vector(free_pages);
-  nice_dbg_o.res_almost_full <= res_almost_full;
+  nice_dbg_o.res_almost_full <= or_reduce(res_almost_full);
+  nice_dbg_o.res_full        <= or_reduce(res_full);
   nice_dbg_o.q_write         <= q_write_p1;
   nice_dbg_o.q_read          <= q_read_p0;
+  nice_dbg_o.rd_ptr          <= std_logic_vector(rd_ptr_p0);
+  nice_dbg_o.wr_ptr          <= std_logic_vector(wr_ptr_p1);
+  nice_dbg_o.in_pg           <= q_input_addr_p1;
+  nice_dbg_o.out_pg          <= q_output_addr_p1;
+  nice_dbg_o.grant_port_msk(g_num_ports-1 downto 0)  <= alloc_req_d1.grant_vec;
+  nice_dbg_o.out_nomem_d1    <= out_nomem_d1;
+  nice_dbg_o.alloc_done      <= done_p1;
+  nice_dbg_o.alloc_req_d0    <= alloc_req_d0.alloc;
+  nice_dbg_o.pg_adv_valid    <= pg_adv_valid;
+  nice_dbg_o.dbg_trig        <= '1' when (alloc_req_d0.alloc = '1' and
+                                alloc_req_d0.set_usecnt = '1' and out_nomem_d1 = '1') else 
+                                '0';
 end syn;

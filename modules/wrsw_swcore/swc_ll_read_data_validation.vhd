@@ -56,6 +56,7 @@ use ieee.numeric_std.all;
 library work;
 use work.swc_swcore_pkg.all;
 use work.genram_pkg.all;
+use work.wrs_dbg_pkg.all;
 
 entity swc_ll_read_data_validation is
   generic(
@@ -87,8 +88,9 @@ entity swc_ll_read_data_validation is
 
      -- data read from multiport_linked_list module
      read_data_o          : out std_logic_vector(g_data_width - 1 downto 0);
-     read_data_valid_o    : out std_logic
-     
+     read_data_valid_o    : out std_logic;
+
+     nice_dbg_o           : out t_dbg_swc_mll_rv
   );
   end swc_ll_read_data_validation;
 
@@ -102,6 +104,7 @@ architecture syn of swc_ll_read_data_validation is
   signal mask_read_req         : std_logic; -- masks the request to the RR Rabiter which governs
                                             -- the access to DPRAM 
   signal  write_data_d0        : std_logic_vector(g_data_width - 1 downto 0);
+  signal read_data_valid  : std_logic;
 begin 
 
   -- the data being read from the Linked List DPRAM is valid,so we just need to pass it
@@ -159,10 +162,19 @@ begin
 
                  read_data_i;
 
-  read_data_valid_o <= (valid_data_read                                                        or       -- normal case
+  read_data_valid   <= (valid_data_read                                                        or       -- normal case
                        (valid_data_write    and (wait_valid_data_write or nonvalid_data_read)) or       
                        (valid_data_write_d0 and (wait_valid_data_write or nonvalid_data_read))    ) and -- reading data from LL input
                         read_req_i;                                                                  -- no request, no answer :)
+  read_data_valid_o <= read_data_valid;
   read_req_o        <=  mask_read_req  and read_req_i;
+
+  nice_dbg_o.read_req <= read_req_i;
+  nice_dbg_o.v_read   <= valid_data_read;
+  nice_dbg_o.nv_read  <= nonvalid_data_read;
+  nice_dbg_o.v_write  <= valid_data_write;
+  nice_dbg_o.rd_valid <= read_data_valid;
+  nice_dbg_o.req_o    <= mask_read_req and read_req_i;
+  nice_dbg_o.rd_adr   <= read_addr_i;
 
 end syn;
