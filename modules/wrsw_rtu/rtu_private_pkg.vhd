@@ -48,6 +48,7 @@ use work.wishbone_pkg.all;              -- for test part (to be moved)
 use work.wrsw_shared_types_pkg.all;
 use work.rtu_wbgen2_pkg.all;
 -- use work.rtu_wbgen2_pkg_old.all;
+use work.wrs_dbg_pkg.all;
 
 package rtu_private_pkg is
 
@@ -319,7 +320,8 @@ package rtu_private_pkg is
       rtu_pcr_pass_bpdu_i       : in std_logic;
       rtu_pcr_pass_all_i        : in std_logic;
       rtu_pcr_fix_prio_i        : in std_logic;
-      rtu_pcr_prio_val_i        : in std_logic_vector(c_wrsw_prio_width - 1 downto 0)
+      rtu_pcr_prio_val_i        : in std_logic_vector(c_wrsw_prio_width - 1 downto 0);
+      nice_dbg_o  : out t_dbg_rtu_port
       );
   end component;
 ----------------------------------------------------------------------------------------

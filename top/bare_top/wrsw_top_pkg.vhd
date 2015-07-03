@@ -413,7 +413,8 @@ package wrsw_top_pkg is
       tru_enabled_i: in std_logic;
       rmon_events_o : out std_logic_vector(g_num_ports*g_rmon_events_bits_pp-1 downto 0);
       wb_i        : in  t_wishbone_slave_in;
-      wb_o        : out t_wishbone_slave_out
+      wb_o        : out t_wishbone_slave_out;
+      nice_dbg_o  : out t_dbg_rtu
       );
   end component; 
    
