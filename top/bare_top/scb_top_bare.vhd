@@ -1756,8 +1756,6 @@ begin
   TRIG2(3)(14)           <= swc_dbg.free(0).ib_ffree;
   TRIG2(3)(15)           <= swc_dbg.free(0).ib_ffree_done;
   TRIG2(3)(21 downto 16) <= swc_dbg.free(0).ib_pgadr(5 downto 0);
-  TRIG2(3)(22)           <= swc_dbg.ib(0).ll_start;
-  TRIG2(3)(23)           <= swc_dbg.ib(0).ll_start_ack;
   TRIG2(3)(24)           <= swc_dbg.ib(0).pckstart_in_adv;
   TRIG2(3)(25)           <= swc_dbg.ib(0).pckinter_in_adv;
   TRIG2(3)(30)           <= swc_dbg.ib(0).ll_wr;
@@ -1772,8 +1770,6 @@ begin
   TRIG3(3)(14)           <= swc_dbg.free(1).ib_ffree;
   TRIG3(3)(15)           <= swc_dbg.free(1).ib_ffree_done;
   TRIG3(3)(21 downto 16) <= swc_dbg.free(1).ib_pgadr(5 downto 0);
-  TRIG3(3)(22)           <= swc_dbg.ib(1).ll_start;
-  TRIG3(3)(23)           <= swc_dbg.ib(1).ll_start_ack;
   TRIG3(3)(24)           <= swc_dbg.ib(1).pckstart_in_adv;
   TRIG3(3)(25)           <= swc_dbg.ib(1).pckinter_in_adv;
   TRIG3(3)(30)           <= swc_dbg.ib(1).ll_wr;
@@ -1788,8 +1784,6 @@ begin
   TRIG4(3)(14)           <= swc_dbg.free(6).ib_ffree;
   TRIG4(3)(15)           <= swc_dbg.free(6).ib_ffree_done;
   TRIG4(3)(21 downto 16) <= swc_dbg.free(6).ib_pgadr(5 downto 0);
-  TRIG4(3)(22)           <= swc_dbg.ib(6).ll_start;
-  TRIG4(3)(23)           <= swc_dbg.ib(6).ll_start_ack;
   TRIG4(3)(24)           <= swc_dbg.ib(6).pckstart_in_adv;
   TRIG4(3)(25)           <= swc_dbg.ib(6).pckinter_in_adv;
   TRIG4(3)(30)           <= swc_dbg.ib(6).ll_wr;
@@ -1804,8 +1798,6 @@ begin
   TRIG5(3)(14)           <= swc_dbg.free(7).ib_ffree;
   TRIG5(3)(15)           <= swc_dbg.free(7).ib_ffree_done;
   TRIG5(3)(21 downto 16) <= swc_dbg.free(7).ib_pgadr(5 downto 0);
-  TRIG5(3)(22)           <= swc_dbg.ib(7).ll_start;
-  TRIG5(3)(23)           <= swc_dbg.ib(7).ll_start_ack;
   TRIG5(3)(24)           <= swc_dbg.ib(7).pckstart_in_adv;
   TRIG5(3)(25)           <= swc_dbg.ib(7).pckinter_in_adv;
   TRIG5(3)(30)           <= swc_dbg.ib(7).ll_wr;
