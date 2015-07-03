@@ -36,6 +36,7 @@
 
 library ieee;
 use ieee.STD_LOGIC_1164.all;
+use ieee.std_logic_misc.all;
 use ieee.numeric_std.all;
 use ieee.math_real.CEIL;
 use work.wishbone_pkg.all;
@@ -222,6 +223,7 @@ architecture rtl of scb_top_bare is
   constant c_SLAVE_WDOG         : integer := 13;
   --constant c_SLAVE_DUMMY        : integer := 13;
 
+  type t_dbg_ep_array is array (natural range <>) of t_dbg_ep;
 
   function f_bool2int(x : boolean) return integer is
   begin
@@ -434,6 +436,20 @@ architecture rtl of scb_top_bare is
   signal ep_dbg_tx_pcs_rd_array : t_ep_dbg_tx_pcs_array(g_num_ports-1 downto 0);
   signal dbg_chps_id          : std_logic_vector(7 downto 0);
   signal swc_dbg : t_dbg_swc;
+  signal ep_dbg  : t_dbg_ep_array(g_num_ports-1 downto 0);
+  signal ep_dbg_synced : t_dbg_ep_array(g_num_ports-1 downto 0);
+
+  -- debug
+  type t_dbg_rtu_cnt is array(integer range <>) of unsigned(7 downto 0);
+  signal dbg_rtu_cnt : t_dbg_rtu_cnt(g_num_ports downto 0);
+  signal dbg_rtu_bug : t_dbg_rtu_cnt(g_num_ports downto 0);
+  type t_dbg_cnt is array(integer range <>) of unsigned(11 downto 0);
+  signal dbg_cnt_eq  : t_dbg_cnt(g_num_ports-1 downto 0);
+  signal dbg_cnt_dif : t_dbg_cnt(g_num_ports-1 downto 0);
+  signal hwiu_dbg1 : std_logic_vector(31 downto 0);
+  signal hwiu_dbg2 : std_logic_vector(31 downto 0);
+  signal hwiu_val1 : unsigned(31 downto 0);
+  signal hwiu_val2 : unsigned(31 downto 0);
   
 begin
 
@@ -741,7 +757,8 @@ begin
 
           led_link_o => led_link_o(i),
           led_act_o  => led_act_o(i),
-          stop_traffic_i => ep_stop_traffic
+          stop_traffic_i => ep_stop_traffic,
+          nice_dbg_o => ep_dbg(i)
           );
 
           phys_o(i).tx_data <= ep_dbg_data_array(i);
@@ -762,6 +779,26 @@ begin
 
       clk_rx_vec(i) <= phys_i(i).rx_clk;
 
+      EP_DBG_SYNC_AFULL: gc_sync_ffs
+        port map(
+          clk_i    => clk_sys,
+          rst_n_i  => rst_n_periph,
+          data_i   => ep_dbg(i).rxpath.pcs_fifo_afull,
+          synced_o => ep_dbg_synced(i).rxpath.pcs_fifo_afull);
+
+      EP_DBG_SYNC_EMPTY: gc_sync_ffs
+        port map(
+          clk_i    => clk_sys,
+          rst_n_i  => rst_n_periph,
+          data_i   => ep_dbg(i).rxpath.pcs_fifo_empty,
+          synced_o => ep_dbg_synced(i).rxpath.pcs_fifo_empty);
+
+      EP_DBG_SYNC_FULL: gc_sync_ffs
+        port map(
+          clk_i   => clk_sys,
+          rst_n_i => rst_n_periph,
+          data_i   => ep_dbg(i).rxpath.pcs_fifo_full,
+          synced_o => ep_dbg_synced(i).rxpath.pcs_fifo_full);
     end generate gen_endpoints_and_phys;
 
     GEN_TIMING: for I in 0 to c_NUM_PORTS generate
@@ -846,7 +883,8 @@ begin
         rtu_rsp_i       => rtu_rsp,
         rtu_ack_o       => swc_rtu_ack,
         rtu_abort_o     =>rtu_rsp_abort,-- open --rtu_rsp_abort
-        wdog_o    => swc_wdog_out
+        wdog_o    => swc_wdog_out,
+        nomem_o   => swc_nomem
         );
      
     -- SWcore global pause nr=0 assigned to TRU
@@ -897,7 +935,8 @@ begin
         -------------------------------
         rmon_events_o => rtu_events,
         wb_i       => cnx_master_out(c_SLAVE_RTU),
-        wb_o       => cnx_master_in(c_SLAVE_RTU));
+        wb_o       => cnx_master_in(c_SLAVE_RTU),
+        nice_dbg_o  => open);
 
     gen_TRU : if(g_with_TRU = true) generate
       U_TRU: xwrsw_tru
@@ -1086,6 +1125,8 @@ begin
         clk_i         => clk_sys,
         dbg_regs_i    => dbg_n_regs,
         dbg_chps_id_o => dbg_chps_id,
+        dbg1_o        => hwiu_dbg1,
+        dbg2_o        => hwiu_dbg2,
         wb_i          => cnx_master_out(c_SLAVE_HWIU),
         wb_o          => cnx_master_in(c_SLAVE_HWIU));
   end generate;
@@ -1208,38 +1249,1175 @@ begin
        T11  <= TRIG11(to_integer(unsigned(dbg_chps_id)));
   end generate;
 
+  process(clk_sys)
+  begin
+    if rising_edge(clk_sys) then
+      if (rst_n_periph='0') then
+        hwiu_val1 <= x"000001F4"; --500
+        hwiu_val2 <= x"00000000";
+      else
+        if(hwiu_dbg1 /= x"00000000") then
+          hwiu_val1 <= unsigned(hwiu_dbg1);
+        end if;
+
+        if(hwiu_dbg2 /= x"00000000") then
+          hwiu_val2 <= unsigned(hwiu_dbg2);
+        end if;
+      end if;
+    end if;
+  end process;
+
+  GEN_RTU_DBG: for I in 0 to g_num_ports-1 generate
+    process(clk_sys)
+    begin
+      if rising_edge(clk_sys) then
+        if(rst_n_periph='0') then
+          dbg_rtu_cnt(I) <= (others=>'0');
+          dbg_rtu_bug(I) <= (others=>'0');
+          dbg_cnt_eq(I) <= (others=>'0');
+          dbg_cnt_dif(I) <= (others=>'0');
+        else
+          if( (swc_dbg.ib(I).dbg_bare_sof > swc_dbg.ib(I).sof_cnt  and
+                unsigned(swc_dbg.ib(I).dbg_bare_sof) - unsigned(swc_dbg.ib(I).sof_cnt) > hwiu_val2) or
+              (swc_dbg.ib(I).dbg_bare_sof < swc_dbg.ib(I).sof_cnt  and
+                unsigned(swc_dbg.ib(I).sof_cnt) - unsigned(swc_dbg.ib(I).dbg_bare_sof) > hwiu_val2)
+            ) then
+            dbg_cnt_dif(I) <= dbg_cnt_dif(I) + 1;
+            dbg_cnt_eq(I)  <= (others=>'0');
+          elsif(swc_dbg.ib(I).dbg_bare_sof = swc_dbg.ib(I).sof_cnt) then
+            dbg_cnt_eq(I) <= dbg_cnt_eq(I) + 1;
+            dbg_cnt_dif(I) <= (others=>'0');
+          end if;
+
+          if(dbg_cnt_dif(I) > hwiu_val1 and unsigned(swc_dbg.ib(I).dbg_bare_sof)/=dbg_rtu_cnt(I)) then
+            dbg_rtu_bug(I) <= dbg_rtu_bug(I) + 1;
+            dbg_rtu_cnt(I) <= unsigned(swc_dbg.ib(I).dbg_bare_sof);
+          elsif(dbg_cnt_eq(I) > hwiu_val1) then
+            dbg_rtu_bug(I) <= (others=>'0');
+            dbg_rtu_cnt(I) <= unsigned(swc_dbg.ib(I).dbg_bare_sof);
+          end if;
+        end if;
+      end if;
+    end process;
+  end generate;
+
+
+  -------------------------------------------------------------------
+  -------------------------------------------------------------------
   -- bank 0
-  TRIG0(0)( 2 downto 0)  <= swc_dbg.mmu.palloc.res_almost_full;
-  TRIG0(0)(13 downto 3)  <= swc_dbg.mmu.palloc.free_pages;
-  TRIG0(0)(14)           <= swc_dbg.mmu.palloc.q_write;
-  TRIG0(0)(15)           <= swc_dbg.mmu.palloc.q_read;
-  TRIG0(0)(18 downto 16) <= swc_dbg.ib(0).alloc_fsm;
-  TRIG0(0)(22 downto 19) <= swc_dbg.ib(0).trans_fsm;
-  TRIG0(0)(26 downto 23) <= swc_dbg.ib(0).rcv_fsm;
-  TRIG0(0)(30 downto 27) <= swc_dbg.ib(0).ll_fsm;
-  TRIG0(0)(31)           <= swc_dbg.ib(0).rtu_valid;
+
+  TRIG0(0)(0)            <= swc_dbg.mmu.palloc.res_almost_full;
+  TRIG0(0)(1)            <= swc_dbg.mmu.palloc.res_full;
+  TRIG0(0)(7 downto 2)   <= swc_dbg.mmu.palloc.free_pages(5 downto 0);
+  TRIG0(0)(8)            <= swc_dbg.mmu.palloc.q_write;
+  TRIG0(0)(9)            <= swc_dbg.mmu.palloc.q_read;
+  TRIG0(0)(13 downto 10) <= swc_dbg.ib(0).trans_fsm;
+  TRIG0(0)(16 downto 14) <= swc_dbg.ib(0).alloc_fsm;
+  TRIG0(0)(20 downto 17) <= swc_dbg.ib(0).rcv_fsm;
+  TRIG0(0)(24 downto 21) <= swc_dbg.ib(0).ll_fsm;
+  TRIG0(0)(25)           <= swc_dbg.ib(0).rtu_valid;
+  TRIG0(0)(26)           <= swc_dbg.ib(0).mem_full_dump;
+  TRIG0(0)(27)           <= swc_dbg.ib(0).finish_rcv;
+  TRIG0(0)(31 downto 28) <= swc_dbg.ib(1).trans_fsm;
+
   TRIG1(0)(2 downto 0)   <= swc_dbg.ib(1).alloc_fsm;
-  TRIG1(0)(6 downto 3)   <= swc_dbg.ib(1).trans_fsm;
-  TRIG1(0)(10 downto 7)  <= swc_dbg.ib(1).rcv_fsm;
-  TRIG1(0)(14 downto 11) <= swc_dbg.ib(1).ll_fsm;
-  TRIG1(0)(15)           <= swc_dbg.ib(1).rtu_valid;
-  TRIG1(0)(18 downto 16) <= swc_dbg.ib(6).alloc_fsm;
-  TRIG1(0)(22 downto 19) <= swc_dbg.ib(6).trans_fsm;
-  TRIG1(0)(26 downto 23) <= swc_dbg.ib(6).rcv_fsm;
-  TRIG1(0)(30 downto 27) <= swc_dbg.ib(6).ll_fsm;
-  TRIG1(0)(31)           <= swc_dbg.ib(6).rtu_valid;
-  TRIG2(0)(2 downto 0)   <= swc_dbg.ib(7).alloc_fsm;
-  TRIG2(0)(6 downto 3)   <= swc_dbg.ib(7).trans_fsm;
+  TRIG1(0)(6 downto 3)   <= swc_dbg.ib(1).rcv_fsm;
+  TRIG1(0)(10 downto 7)  <= swc_dbg.ib(1).ll_fsm;
+  TRIG1(0)(11)           <= swc_dbg.ib(1).rtu_valid;
+  TRIG1(0)(12)           <= swc_dbg.ib(1).mem_full_dump;
+  TRIG1(0)(13)           <= swc_dbg.ib(1).finish_rcv;
+  TRIG1(0)(17 downto 14) <= swc_dbg.ib(6).trans_fsm;
+  TRIG1(0)(20 downto 18) <= swc_dbg.ib(6).alloc_fsm;
+  TRIG1(0)(24 downto 21) <= swc_dbg.ib(6).rcv_fsm;
+  TRIG1(0)(28 downto 25) <= swc_dbg.ib(6).ll_fsm;
+  TRIG1(0)(29)           <= swc_dbg.ib(6).rtu_valid;
+  TRIG1(0)(30)           <= swc_dbg.ib(6).mem_full_dump;
+  TRIG1(0)(31)           <= swc_dbg.ib(6).finish_rcv;
+
+  TRIG2(0)(3 downto 0)   <= swc_dbg.ib(7).trans_fsm;
+  TRIG2(0)(6 downto 4)   <= swc_dbg.ib(7).alloc_fsm;
   TRIG2(0)(10 downto 7)  <= swc_dbg.ib(7).rcv_fsm;
   TRIG2(0)(14 downto 11) <= swc_dbg.ib(7).ll_fsm;
   TRIG2(0)(15)           <= swc_dbg.ib(7).rtu_valid;
-  TRIG2(0)(19 downto 16) <= swc_dbg.ob(0).send_fsm;
-  TRIG2(0)(23 downto 20) <= swc_dbg.ob(0).prep_fsm;
-  TRIG2(0)(27 downto 24) <= swc_dbg.ob(1).send_fsm;
-  TRIG2(0)(31 downto 28) <= swc_dbg.ob(1).prep_fsm;
-  TRIG3(0)(3 downto 0)   <= swc_dbg.ob(6).send_fsm;
-  TRIG3(0)(7 downto 4)   <= swc_dbg.ob(6).prep_fsm;
-  TRIG3(0)(11 downto 8)  <= swc_dbg.ob(7).send_fsm;
-  TRIG3(0)(15 downto 12) <= swc_dbg.ob(7).prep_fsm;
+  TRIG2(0)(16)           <= swc_dbg.ib(7).mem_full_dump;
+  TRIG2(0)(17)           <= swc_dbg.ib(7).finish_rcv;
+  TRIG2(0)(18)           <= swc_dbg.ib(0).force_free;
+  TRIG2(0)(19)           <= swc_dbg.ib(0).force_free_done;
+  TRIG2(0)(20)           <= swc_dbg.ib(1).force_free;
+  TRIG2(0)(21)           <= swc_dbg.ib(1).force_free_done;
+  TRIG2(0)(22)           <= swc_dbg.ib(6).force_free;
+  TRIG2(0)(23)           <= swc_dbg.ib(6).force_free_done;
+  TRIG2(0)(24)           <= swc_dbg.ib(7).force_free;
+  TRIG2(0)(25)           <= swc_dbg.ib(7).force_free_done;
+  TRIG2(0)(31 downto 26) <= swc_dbg.ib(0).force_free_adr(5 downto 0);
+
+  TRIG3(0)(0)            <= swc_dbg.ib(0).pckstart_in_adv;
+  TRIG3(0)(1)            <= swc_dbg.ib(0).pckinter_in_adv;
+  TRIG3(0)(2)            <= swc_dbg.ib(0).ll_wr;
+  TRIG3(0)(3)            <= swc_dbg.ib(0).ll_wr_done;
+  TRIG3(0)(4)            <= swc_dbg.ib(0).ll_page_valid;
+  TRIG3(0)(5)            <= swc_dbg.ib(0).ll_eof;
+  TRIG3(0)(11 downto  6) <= swc_dbg.ib(0).ll_page(5 downto 0);
+  TRIG3(0)(17 downto 12) <= swc_dbg.ib(0).ll_next_page(5 downto 0);
+  TRIG3(0)(18)           <= swc_dbg.ib(0).alloc_req;
+  TRIG3(0)(19)           <= swc_dbg.ib(0).alloc_done;
+  TRIG3(0)(25 downto 20) <= swc_dbg.ib(0).page_start(5 downto 0);
+  TRIG3(0)(31 downto 26) <= swc_dbg.ib(0).page_inter(5 downto 0);
+
+  TRIG4(0)(0)            <= swc_dbg.ib(1).pckstart_in_adv;
+  TRIG4(0)(1)            <= swc_dbg.ib(1).pckinter_in_adv;
+  TRIG4(0)(2)            <= swc_dbg.ib(1).ll_wr;
+  TRIG4(0)(3)            <= swc_dbg.ib(1).ll_wr_done;
+  TRIG4(0)(4)            <= swc_dbg.ib(1).ll_page_valid;
+  TRIG4(0)(5)            <= swc_dbg.ib(1).ll_eof;
+  TRIG4(0)(11 downto  6) <= swc_dbg.ib(1).ll_page(5 downto 0);
+  TRIG4(0)(17 downto 12) <= swc_dbg.ib(1).ll_next_page(5 downto 0);
+  TRIG4(0)(18)           <= swc_dbg.ib(1).alloc_req;
+  TRIG4(0)(19)           <= swc_dbg.ib(1).alloc_done;
+  TRIG4(0)(25 downto 20) <= swc_dbg.ib(1).page_start(5 downto 0);
+  TRIG4(0)(31 downto 26) <= swc_dbg.ib(1).page_inter(5 downto 0);
+
+  TRIG5(0)(0)            <= swc_dbg.ib(6).pckstart_in_adv;
+  TRIG5(0)(1)            <= swc_dbg.ib(6).pckinter_in_adv;
+  TRIG5(0)(2)            <= swc_dbg.ib(6).ll_wr;
+  TRIG5(0)(3)            <= swc_dbg.ib(6).ll_wr_done;
+  TRIG5(0)(4)            <= swc_dbg.ib(6).ll_page_valid;
+  TRIG5(0)(5)            <= swc_dbg.ib(6).ll_eof;
+  TRIG5(0)(11 downto  6) <= swc_dbg.ib(6).ll_page(5 downto 0);
+  TRIG5(0)(17 downto 12) <= swc_dbg.ib(6).ll_next_page(5 downto 0);
+  TRIG5(0)(18)           <= swc_dbg.ib(6).alloc_req;
+  TRIG5(0)(19)           <= swc_dbg.ib(6).alloc_done;
+  TRIG5(0)(25 downto 20) <= swc_dbg.ib(6).page_start(5 downto 0);
+  TRIG5(0)(31 downto 26) <= swc_dbg.ib(6).page_inter(5 downto 0);
+
+  TRIG6(0)(0)            <= swc_dbg.ib(7).pckstart_in_adv;
+  TRIG6(0)(1)            <= swc_dbg.ib(7).pckinter_in_adv;
+  TRIG6(0)(2)            <= swc_dbg.ib(7).ll_wr;
+  TRIG6(0)(3)            <= swc_dbg.ib(7).ll_wr_done;
+  TRIG6(0)(4)            <= swc_dbg.ib(7).ll_page_valid;
+  TRIG6(0)(5)            <= swc_dbg.ib(7).ll_eof;
+  TRIG6(0)(11 downto  6) <= swc_dbg.ib(7).ll_page(5 downto 0);
+  TRIG6(0)(17 downto 12) <= swc_dbg.ib(7).ll_next_page(5 downto 0);
+  TRIG6(0)(18)           <= swc_dbg.ib(7).alloc_req;
+  TRIG6(0)(19)           <= swc_dbg.ib(7).alloc_done;
+  TRIG6(0)(25 downto 20) <= swc_dbg.ib(7).page_start(5 downto 0);
+  TRIG6(0)(31 downto 26) <= swc_dbg.ib(7).page_inter(5 downto 0);
+
+  TRIG7(0)(0) <= swc_dbg.ib(0).pages_same;
+  TRIG7(0)(1) <= swc_dbg.ib(1).pages_same;
+  TRIG7(0)(2) <= swc_dbg.ib(6).pages_same;
+  TRIG7(0)(3) <= swc_dbg.ib(7).pages_same;
+  TRIG7(0)(4) <= swc_dbg.ib(0).rcv_stuck;
+  TRIG7(0)(5) <= swc_dbg.ib(1).rcv_stuck;
+  TRIG7(0)(6) <= swc_dbg.ib(6).rcv_stuck;
+  TRIG7(0)(7) <= swc_dbg.ib(7).rcv_stuck;
+  TRIG7(0)(8)  <= swc_dbg.mmu.p0_req_alloc;
+  TRIG7(0)(9)  <= swc_dbg.mmu.p1_req_alloc;
+  TRIG7(0)(10) <= swc_dbg.mmu.p6_req_alloc;
+  TRIG7(0)(11) <= swc_dbg.mmu.p7_req_alloc;
+  TRIG7(0)(12) <= swc_dbg.mmu.p0_arb_req;
+  TRIG7(0)(13) <= swc_dbg.mmu.p0_arb_grant;
+  TRIG7(0)(14) <= swc_dbg.mmu.p1_arb_req;
+  TRIG7(0)(15) <= swc_dbg.mmu.p1_arb_grant;
+  TRIG7(0)(21 downto 16) <= swc_dbg.ib(0).alloc_page(5 downto 0); --all input blocks share
+                                                                  -- the same output from MMU
+  TRIG7(0)(27 downto 22) <= swc_dbg.mmu.palloc.rd_ptr(5 downto 0);
+  TRIG7(0)(28) <= swc_dbg.mmu.palloc.out_nomem_d1;
+  TRIG7(0)(29) <= swc_dbg.mmu.palloc.alloc_done;
+  TRIG7(0)(30) <= swc_dbg.mmu.palloc.alloc_req_d0;
+  TRIG7(0)(31) <= swc_dbg.mmu.palloc.pg_adv_valid;
+
+
+  TRIG8(0)(5 downto 0)   <= swc_dbg.ib(1).force_free_adr(5 downto 0);
+  TRIG8(0)(11 downto 6)  <= swc_dbg.ib(6).force_free_adr(5 downto 0);
+  TRIG8(0)(17 downto 12) <= swc_dbg.ib(7).force_free_adr(5 downto 0);
+  TRIG8(0)(18) <= swc_dbg.ob(0).free;
+  TRIG8(0)(19) <= swc_dbg.ob(0).free_done;
+  TRIG8(0)(20) <= swc_dbg.ob(1).free;
+  TRIG8(0)(21) <= swc_dbg.ob(1).free_done;
+  TRIG8(0)(22) <= swc_dbg.ob(6).free;
+  TRIG8(0)(23) <= swc_dbg.ob(6).free_done;
+  TRIG8(0)(24) <= swc_dbg.ob(7).free;
+  TRIG8(0)(25) <= swc_dbg.ob(7).free_done;
+  TRIG8(0)(31 downto 26) <= swc_dbg.ob(0).free_adr(5 downto 0);
+
+  TRIG9(0)(5 downto 0)   <= swc_dbg.ob(1).free_adr(5 downto 0);
+  TRIG9(0)(11 downto 6)  <= swc_dbg.ob(6).free_adr(5 downto 0);
+  TRIG9(0)(17 downto 12) <= swc_dbg.ob(7).free_adr(5 downto 0);
+
+  TRIG9(0)(23 downto 18) <= swc_dbg.mmu.palloc.in_pg(5 downto 0);
+  TRIG9(0)(29 downto 24) <= swc_dbg.mmu.palloc.out_pg(5 downto 0);
+  TRIG9(0)(30) <= swc_dbg.mmu.palloc.dbg_trig;
+
+  TRIG10(0)(0) <= swc_dbg.mmu.p6_arb_req;
+  TRIG10(0)(1) <= swc_dbg.mmu.p6_arb_grant;
+  TRIG10(0)(2) <= swc_dbg.mmu.p7_arb_req;
+  TRIG10(0)(3) <= swc_dbg.mmu.p7_arb_grant;
+  TRIG10(0)(11 downto 4) <= swc_dbg.mmu.grant_ib_d0(7 downto 0);
+  TRIG10(0)(19 downto 12) <= swc_dbg.mmu.palloc.grant_port_msk(7 downto 0);
+
+  -------------------------------------------------------------------
+  ---- bank 1
+  TRIG0(1)(5 downto 0) <= swc_dbg.mmu.palloc.free_pages(5 downto 0);
+  TRIG0(1)(11 downto 6)  <= swc_dbg.ib(0).page_start(5 downto 0);
+  TRIG0(1)(17 downto 12) <= swc_dbg.ib(0).page_inter(5 downto 0);
+  TRIG0(1)(23 downto 18) <= swc_dbg.ib(1).page_start(5 downto 0);
+  TRIG0(1)(29 downto 24) <= swc_dbg.ib(1).page_inter(5 downto 0);
+  TRIG1(1)(5 downto 0)   <= swc_dbg.ib(6).page_start(5 downto 0);
+  TRIG1(1)(11 downto 6)  <= swc_dbg.ib(6).page_inter(5 downto 0);
+  TRIG1(1)(17 downto 12) <= swc_dbg.ib(7).page_start(5 downto 0);
+  TRIG1(1)(23 downto 18) <= swc_dbg.ib(7).page_inter(5 downto 0);
+  TRIG1(1)(24)           <= swc_dbg.ib(0).rcv_stuck;
+  TRIG1(1)(25)           <= swc_dbg.ib(1).rcv_stuck;
+  TRIG1(1)(26)           <= swc_dbg.ib(6).rcv_stuck;
+  TRIG1(1)(27)           <= swc_dbg.ib(7).rcv_stuck;
+  TRIG1(1)(31 downto 28) <= (others=>'0');
+
+  TRIG2(1)(0)            <= swc_dbg.free(0).free;
+  TRIG2(1)(1)            <= swc_dbg.free(0).free_done;
+  TRIG2(1)(2)            <= swc_dbg.free(0).ffree;
+  TRIG2(1)(3)            <= swc_dbg.free(0).ffree_done;
+  TRIG2(1)(9 downto 4)   <= swc_dbg.free(0).pgadr(5 downto 0);
+  TRIG2(1)(10)           <= swc_dbg.free(0).last_ucnt;
+  TRIG2(1)(13 downto 11) <= swc_dbg.free(0).fsm;
+  TRIG2(1)(14)           <= swc_dbg.free(0).ib_ffree;
+  TRIG2(1)(15)           <= swc_dbg.free(0).ib_ffree_done;
+  TRIG2(1)(21 downto 16) <= swc_dbg.free(0).ib_pgadr(5 downto 0);
+  TRIG2(1)(22)           <= swc_dbg.free(0).ob_free;
+  TRIG2(1)(23)           <= swc_dbg.free(0).ob_free_done;
+  TRIG2(1)(29 downto 24) <= swc_dbg.free(0).ob_pgadr(5 downto 0);
+  TRIG2(1)(31 downto 30) <= (others=>'0');
+
+  TRIG3(1)(0)            <= swc_dbg.free(1).free;
+  TRIG3(1)(1)            <= swc_dbg.free(1).free_done;
+  TRIG3(1)(2)            <= swc_dbg.free(1).ffree;
+  TRIG3(1)(3)            <= swc_dbg.free(1).ffree_done;
+  TRIG3(1)(9 downto 4)   <= swc_dbg.free(1).pgadr(5 downto 0);
+  TRIG3(1)(10)           <= swc_dbg.free(1).last_ucnt;
+  TRIG3(1)(13 downto 11) <= swc_dbg.free(1).fsm;
+  TRIG3(1)(14)           <= swc_dbg.free(1).ib_ffree;
+  TRIG3(1)(15)           <= swc_dbg.free(1).ib_ffree_done;
+  TRIG3(1)(21 downto 16) <= swc_dbg.free(1).ib_pgadr(5 downto 0);
+  TRIG3(1)(22)           <= swc_dbg.free(1).ob_free;
+  TRIG3(1)(23)           <= swc_dbg.free(1).ob_free_done;
+  TRIG3(1)(29 downto 24) <= swc_dbg.free(1).ob_pgadr(5 downto 0);
+  TRIG3(1)(31 downto 30) <= (others=>'0');
+
+  TRIG4(1)(0)            <= swc_dbg.free(6).free;
+  TRIG4(1)(1)            <= swc_dbg.free(6).free_done;
+  TRIG4(1)(2)            <= swc_dbg.free(6).ffree;
+  TRIG4(1)(3)            <= swc_dbg.free(6).ffree_done;
+  TRIG4(1)(9 downto 4)   <= swc_dbg.free(6).pgadr(5 downto 0);
+  TRIG4(1)(10)           <= swc_dbg.free(6).last_ucnt;
+  TRIG4(1)(13 downto 11) <= swc_dbg.free(6).fsm;
+  TRIG4(1)(14)           <= swc_dbg.free(6).ib_ffree;
+  TRIG4(1)(15)           <= swc_dbg.free(6).ib_ffree_done;
+  TRIG4(1)(21 downto 16) <= swc_dbg.free(6).ib_pgadr(5 downto 0);
+  TRIG4(1)(22)           <= swc_dbg.free(6).ob_free;
+  TRIG4(1)(23)           <= swc_dbg.free(6).ob_free_done;
+  TRIG4(1)(29 downto 24) <= swc_dbg.free(6).ob_pgadr(5 downto 0);
+  TRIG4(1)(31 downto 30) <= (others=>'0');
+
+  TRIG5(1)(0)            <= swc_dbg.free(7).free;
+  TRIG5(1)(1)            <= swc_dbg.free(7).free_done;
+  TRIG5(1)(2)            <= swc_dbg.free(7).ffree;
+  TRIG5(1)(3)            <= swc_dbg.free(7).ffree_done;
+  TRIG5(1)(9 downto 4)   <= swc_dbg.free(7).pgadr(5 downto 0);
+  TRIG5(1)(10)           <= swc_dbg.free(7).last_ucnt;
+  TRIG5(1)(13 downto 11) <= swc_dbg.free(7).fsm;
+  TRIG5(1)(14)           <= swc_dbg.free(7).ib_ffree;
+  TRIG5(1)(15)           <= swc_dbg.free(7).ib_ffree_done;
+  TRIG5(1)(21 downto 16) <= swc_dbg.free(7).ib_pgadr(5 downto 0);
+  TRIG5(1)(22)           <= swc_dbg.free(7).ob_free;
+  TRIG5(1)(23)           <= swc_dbg.free(7).ob_free_done;
+  TRIG5(1)(29 downto 24) <= swc_dbg.free(7).ob_pgadr(5 downto 0);
+  TRIG5(1)(31 downto 30) <= (others=>'0');
+
+  TRIG6(1)(0)            <= swc_dbg.free(2).free;
+  TRIG6(1)(1)            <= swc_dbg.free(2).free_done;
+  TRIG6(1)(2)            <= swc_dbg.free(2).ffree;
+  TRIG6(1)(3)            <= swc_dbg.free(2).ffree_done;
+  TRIG6(1)(9 downto 4)   <= swc_dbg.free(2).pgadr(5 downto 0);
+  TRIG6(1)(10)           <= swc_dbg.free(2).last_ucnt;
+  TRIG6(1)(13 downto 11) <= swc_dbg.free(2).fsm;
+  TRIG6(1)(14)           <= swc_dbg.free(2).ib_ffree;
+  TRIG6(1)(15)           <= swc_dbg.free(2).ib_ffree_done;
+  TRIG6(1)(21 downto 16) <= swc_dbg.free(2).ib_pgadr(5 downto 0);
+  TRIG6(1)(22)           <= swc_dbg.free(2).ob_free;
+  TRIG6(1)(23)           <= swc_dbg.free(2).ob_free_done;
+  TRIG6(1)(29 downto 24) <= swc_dbg.free(2).ob_pgadr(5 downto 0);
+  TRIG6(1)(31 downto 30) <= (others=>'0');
+
+  TRIG7(1)(0)            <= swc_dbg.free(3).free;
+  TRIG7(1)(1)            <= swc_dbg.free(3).free_done;
+  TRIG7(1)(2)            <= swc_dbg.free(3).ffree;
+  TRIG7(1)(3)            <= swc_dbg.free(3).ffree_done;
+  TRIG7(1)(9 downto 4)   <= swc_dbg.free(3).pgadr(5 downto 0);
+  TRIG7(1)(10)           <= swc_dbg.free(3).last_ucnt;
+  TRIG7(1)(13 downto 11) <= swc_dbg.free(3).fsm;
+  TRIG7(1)(14)           <= swc_dbg.free(3).ib_ffree;
+  TRIG7(1)(15)           <= swc_dbg.free(3).ib_ffree_done;
+  TRIG7(1)(21 downto 16) <= swc_dbg.free(3).ib_pgadr(5 downto 0);
+  TRIG7(1)(22)           <= swc_dbg.free(3).ob_free;
+  TRIG7(1)(23)           <= swc_dbg.free(3).ob_free_done;
+  TRIG7(1)(29 downto 24) <= swc_dbg.free(3).ob_pgadr(5 downto 0);
+  TRIG7(1)(31 downto 30) <= (others=>'0');
+
+  TRIG8(1)(0)            <= swc_dbg.free(4).free;
+  TRIG8(1)(1)            <= swc_dbg.free(4).free_done;
+  TRIG8(1)(2)            <= swc_dbg.free(4).ffree;
+  TRIG8(1)(3)            <= swc_dbg.free(4).ffree_done;
+  TRIG8(1)(9 downto 4)   <= swc_dbg.free(4).pgadr(5 downto 0);
+  TRIG8(1)(10)           <= swc_dbg.free(4).last_ucnt;
+  TRIG8(1)(13 downto 11) <= swc_dbg.free(4).fsm;
+  TRIG8(1)(14)           <= swc_dbg.free(4).ib_ffree;
+  TRIG8(1)(15)           <= swc_dbg.free(4).ib_ffree_done;
+  TRIG8(1)(21 downto 16) <= swc_dbg.free(4).ib_pgadr(5 downto 0);
+  TRIG8(1)(22)           <= swc_dbg.free(4).ob_free;
+  TRIG8(1)(23)           <= swc_dbg.free(4).ob_free_done;
+  TRIG8(1)(29 downto 24) <= swc_dbg.free(4).ob_pgadr(5 downto 0);
+  TRIG8(1)(31 downto 30) <= (others=>'0');
+
+  TRIG9(1)(0)            <= swc_dbg.free(5).free;
+  TRIG9(1)(1)            <= swc_dbg.free(5).free_done;
+  TRIG9(1)(2)            <= swc_dbg.free(5).ffree;
+  TRIG9(1)(3)            <= swc_dbg.free(5).ffree_done;
+  TRIG9(1)(9 downto 4)   <= swc_dbg.free(5).pgadr(5 downto 0);
+  TRIG9(1)(10)           <= swc_dbg.free(5).last_ucnt;
+  TRIG9(1)(13 downto 11) <= swc_dbg.free(5).fsm;
+  TRIG9(1)(14)           <= swc_dbg.free(5).ib_ffree;
+  TRIG9(1)(15)           <= swc_dbg.free(5).ib_ffree_done;
+  TRIG9(1)(21 downto 16) <= swc_dbg.free(5).ib_pgadr(5 downto 0);
+  TRIG9(1)(22)           <= swc_dbg.free(5).ob_free;
+  TRIG9(1)(23)           <= swc_dbg.free(5).ob_free_done;
+  TRIG9(1)(29 downto 24) <= swc_dbg.free(5).ob_pgadr(5 downto 0);
+  TRIG9(1)(31 downto 30) <= (others=>'0');
+
+  TRIG10(1)(0)           <= swc_dbg.free(8).free;
+  TRIG10(1)(1)           <= swc_dbg.free(8).free_done;
+  TRIG10(1)(2)           <= swc_dbg.free(8).ffree;
+  TRIG10(1)(3)           <= swc_dbg.free(8).ffree_done;
+  TRIG10(1)(9 downto 4)  <= swc_dbg.free(8).pgadr(5 downto 0);
+  TRIG10(1)(10)          <= swc_dbg.free(8).last_ucnt;
+  TRIG10(1)(13 downto 11)<= swc_dbg.free(8).fsm;
+  TRIG10(1)(14)          <= swc_dbg.free(8).ib_ffree;
+  TRIG10(1)(15)          <= swc_dbg.free(8).ib_ffree_done;
+  TRIG10(1)(21 downto 16)<= swc_dbg.free(8).ib_pgadr(5 downto 0);
+  TRIG10(1)(22)          <= swc_dbg.free(8).ob_free;
+  TRIG10(1)(23)          <= swc_dbg.free(8).ob_free_done;
+  TRIG10(1)(29 downto 24)<= swc_dbg.free(8).ob_pgadr(5 downto 0);
+  TRIG10(1)(31 downto 30)<= (others=>'0');
+
+  -------------------------------------------------------------------
+  ---- bank 2
+  TRIG0(2)(5 downto 0) <= swc_dbg.mmu.palloc.free_pages(5 downto 0);
+  TRIG0(2)(11 downto 6)  <= swc_dbg.ib(0).page_start(5 downto 0);
+  TRIG0(2)(17 downto 12) <= swc_dbg.ib(0).page_inter(5 downto 0);
+  TRIG0(2)(23 downto 18) <= swc_dbg.ib(1).page_start(5 downto 0);
+  TRIG0(2)(29 downto 24) <= swc_dbg.ib(1).page_inter(5 downto 0);
+  TRIG1(2)(5 downto 0)   <= swc_dbg.ib(6).page_start(5 downto 0);
+  TRIG1(2)(11 downto 6)  <= swc_dbg.ib(6).page_inter(5 downto 0);
+  TRIG1(2)(17 downto 12) <= swc_dbg.ib(7).page_start(5 downto 0);
+  TRIG1(2)(23 downto 18) <= swc_dbg.ib(7).page_inter(5 downto 0);
+  TRIG1(2)(24)           <= swc_dbg.ib(0).pta_transfer;
+  TRIG1(2)(25)           <= swc_dbg.ib(1).pta_transfer;
+  TRIG1(2)(26)           <= swc_dbg.ib(6).pta_transfer;
+  TRIG1(2)(27)           <= swc_dbg.ib(7).pta_transfer;
+  TRIG1(2)(28)           <= swc_dbg.ib(0).rcv_stuck;
+  TRIG1(2)(29)           <= swc_dbg.ib(1).rcv_stuck;
+  TRIG1(2)(30)           <= swc_dbg.ib(6).rcv_stuck;
+  TRIG1(2)(31)           <= swc_dbg.ib(7).rcv_stuck;
+
+  TRIG2(2)(0)            <= swc_dbg.free(0).ffree;
+  TRIG2(2)(1)            <= swc_dbg.free(0).ffree_done;
+  TRIG2(2)(7 downto 2)   <= swc_dbg.free(0).pgadr(5 downto 0);
+  TRIG2(2)(8)            <= swc_dbg.free(0).last_ucnt;
+  TRIG2(2)(11 downto 9)  <= swc_dbg.free(0).fsm;
+  TRIG2(2)(12)           <= swc_dbg.free(1).ffree;
+  TRIG2(2)(13)           <= swc_dbg.free(1).ffree_done;
+  TRIG2(2)(19 downto 14) <= swc_dbg.free(1).pgadr(5 downto 0);
+  TRIG2(2)(20)           <= swc_dbg.free(1).last_ucnt;
+  TRIG2(2)(23 downto 21) <= swc_dbg.free(1).fsm;
+  TRIG2(2)(24)           <= swc_dbg.ib(0).pck_sof;
+  TRIG2(2)(25)           <= swc_dbg.ib(0).pck_eof;
+  TRIG2(2)(26)           <= swc_dbg.ib(1).pck_sof;
+  TRIG2(2)(27)           <= swc_dbg.ib(1).pck_eof;
+  TRIG2(2)(28)           <= swc_dbg.ib(6).pck_sof;
+  TRIG2(2)(29)           <= swc_dbg.ib(6).pck_eof;
+  TRIG2(2)(30)           <= swc_dbg.ib(7).pck_sof;
+  TRIG2(2)(31)           <= swc_dbg.ib(7).pck_eof;
+
+  TRIG3(2)(0)            <= swc_dbg.free(6).ffree;
+  TRIG3(2)(1)            <= swc_dbg.free(6).ffree_done;
+  TRIG3(2)(7 downto 2)   <= swc_dbg.free(6).pgadr(5 downto 0);
+  TRIG3(2)(8)            <= swc_dbg.free(6).last_ucnt;
+  TRIG3(2)(11 downto 9)  <= swc_dbg.free(6).fsm;
+  TRIG3(2)(12)           <= swc_dbg.free(7).ffree;
+  TRIG3(2)(13)           <= swc_dbg.free(7).ffree_done;
+  TRIG3(2)(19 downto 14) <= swc_dbg.free(7).pgadr(5 downto 0);
+  TRIG3(2)(20)           <= swc_dbg.free(7).last_ucnt;
+  TRIG3(2)(23 downto 21) <= swc_dbg.free(7).fsm;
+  TRIG3(2)(24)           <= swc_dbg.ib(0).force_free;
+  TRIG3(2)(25)           <= swc_dbg.ib(0).force_free_done;
+  TRIG3(2)(26)           <= swc_dbg.ib(1).force_free;
+  TRIG3(2)(27)           <= swc_dbg.ib(1).force_free_done;
+  TRIG3(2)(28)           <= swc_dbg.ib(6).force_free;
+  TRIG3(2)(29)           <= swc_dbg.ib(6).force_free_done;
+  TRIG3(2)(30)           <= swc_dbg.ib(7).force_free;
+  TRIG3(2)(31)           <= swc_dbg.ib(7).force_free_done;
+
+  TRIG4(2)(3 downto 0)   <= swc_dbg.ib(0).rcv_fsm;
+  TRIG4(2)(7 downto 4)   <= swc_dbg.ib(0).trans_fsm;
+  TRIG4(2)(11 downto 8)  <= swc_dbg.ib(0).ll_fsm;
+  TRIG4(2)(17 downto 12) <= swc_dbg.ib(0).force_free_adr(5 downto 0);
+  TRIG4(2)(23 downto 18) <= swc_dbg.ib(0).pta_pgadr(5 downto 0);
+  TRIG4(2)(31 downto 24) <= swc_dbg.ib(0).pta_mask;
+
+  TRIG5(2)(3 downto 0)   <= swc_dbg.ib(1).rcv_fsm;
+  TRIG5(2)(7 downto 4)   <= swc_dbg.ib(1).trans_fsm;
+  TRIG5(2)(11 downto 8)  <= swc_dbg.ib(1).ll_fsm;
+  TRIG5(2)(17 downto 12) <= swc_dbg.ib(1).force_free_adr(5 downto 0);
+  TRIG5(2)(23 downto 18) <= swc_dbg.ib(1).pta_pgadr(5 downto 0);
+  TRIG5(2)(31 downto 24) <= swc_dbg.ib(1).pta_mask;
+
+  TRIG6(2)(3 downto 0)   <= swc_dbg.ib(6).rcv_fsm;
+  TRIG6(2)(7 downto 4)   <= swc_dbg.ib(6).trans_fsm;
+  TRIG6(2)(11 downto 8)  <= swc_dbg.ib(6).ll_fsm;
+  TRIG6(2)(17 downto 12) <= swc_dbg.ib(6).force_free_adr(5 downto 0);
+  TRIG6(2)(23 downto 18) <= swc_dbg.ib(6).pta_pgadr(5 downto 0);
+  TRIG6(2)(31 downto 24) <= swc_dbg.ib(6).pta_mask;
+
+  TRIG7(2)(3 downto 0)   <= swc_dbg.ib(7).rcv_fsm;
+  TRIG7(2)(7 downto 4)   <= swc_dbg.ib(7).trans_fsm;
+  TRIG7(2)(11 downto 8)  <= swc_dbg.ib(7).ll_fsm;
+  TRIG7(2)(17 downto 12) <= swc_dbg.ib(7).force_free_adr(5 downto 0);
+  TRIG7(2)(23 downto 18) <= swc_dbg.ib(7).pta_pgadr(5 downto 0);
+  TRIG7(2)(31 downto 24) <= swc_dbg.ib(7).pta_mask;
+
+  TRIG8(2)(0) <= swc_dbg.ib(0).rtu_valid;
+  TRIG8(2)(1) <= swc_dbg.ib(0).rtu_ack;
+  TRIG8(2)(2) <= swc_dbg.ib(1).rtu_valid;
+  TRIG8(2)(3) <= swc_dbg.ib(1).rtu_ack;
+  TRIG8(2)(4) <= swc_dbg.ib(6).rtu_valid;
+  TRIG8(2)(5) <= swc_dbg.ib(6).rtu_ack;
+  TRIG8(2)(6) <= swc_dbg.ib(7).rtu_valid;
+  TRIG8(2)(7) <= swc_dbg.ib(7).rtu_ack;
+  TRIG8(2)(8)  <= swc_dbg.ib(0).cyc;
+  TRIG8(2)(9)  <= swc_dbg.ib(0).stb;
+  TRIG8(2)(10) <= swc_dbg.ib(0).tr_drop_stuck;
+  TRIG8(2)(11) <= swc_dbg.ib(0).stall;
+  TRIG8(2)(12) <= swc_dbg.ib(1).cyc;
+  TRIG8(2)(13) <= swc_dbg.ib(1).stb;
+  TRIG8(2)(14) <= swc_dbg.ib(1).tr_drop_stuck;
+  TRIG8(2)(15) <= swc_dbg.ib(1).stall;
+  TRIG8(2)(16) <= swc_dbg.ib(6).cyc;
+  TRIG8(2)(17) <= swc_dbg.ib(6).stb;
+  TRIG8(2)(18) <= swc_dbg.ib(6).tr_drop_stuck;
+  TRIG8(2)(19) <= swc_dbg.ib(6).stall;
+  TRIG8(2)(20) <= swc_dbg.ib(7).cyc;
+  TRIG8(2)(21) <= swc_dbg.ib(7).stb;
+  TRIG8(2)(22) <= swc_dbg.ib(7).tr_drop_stuck;
+  TRIG8(2)(23) <= swc_dbg.ib(7).stall;
+  TRIG8(2)(29 downto 24) <= swc_dbg.ib(7).ll_page(5 downto 0);
+  TRIG8(2)(30) <= swc_dbg.ib(7).mpm_pg_req_d0;
+  TRIG8(2)(31) <= swc_dbg.ib(7).mpm_dlast_d0;
+
+  TRIG9(2)(5 downto 0)   <= swc_dbg.ib(7).ll_next_page(5 downto 0);
+  TRIG9(2)(11 downto 6)  <= swc_dbg.ib(6).ll_page(5 downto 0);
+  TRIG9(2)(17 downto 12) <= swc_dbg.ib(6).ll_next_page(5 downto 0);
+  TRIG9(2)(23 downto 18) <= swc_dbg.ib(7).mpm_pg_adr(5 downto 0);
+  TRIG9(2)(29 downto 24) <= swc_dbg.ib(6).mpm_pg_adr(5 downto 0);
+  TRIG9(2)(30) <= swc_dbg.ib(6).mpm_pg_req_d0;
+  TRIG9(2)(31) <= swc_dbg.ib(6).mpm_dlast_d0;
+
+  -------------------------------------------------------------------
+  -- bank 3
+  TRIG0(3)(5 downto 0) <= swc_dbg.mmu.palloc.free_pages(5 downto 0);
+  TRIG0(3)(11 downto 6)  <= swc_dbg.ib(0).page_start(5 downto 0);
+  TRIG0(3)(17 downto 12) <= swc_dbg.ib(0).page_inter(5 downto 0);
+  TRIG0(3)(23 downto 18) <= swc_dbg.ib(1).page_start(5 downto 0);
+  TRIG0(3)(29 downto 24) <= swc_dbg.ib(1).page_inter(5 downto 0);
+  TRIG1(3)(5 downto 0)   <= swc_dbg.ib(6).page_start(5 downto 0);
+  TRIG1(3)(11 downto 6)  <= swc_dbg.ib(6).page_inter(5 downto 0);
+  TRIG1(3)(17 downto 12) <= swc_dbg.ib(7).page_start(5 downto 0);
+  TRIG1(3)(23 downto 18) <= swc_dbg.ib(7).page_inter(5 downto 0);
+  TRIG1(3)(24)           <= swc_dbg.ib(0).rcv_stuck;
+  TRIG1(3)(25)           <= swc_dbg.ib(1).rcv_stuck;
+  TRIG1(3)(26)           <= swc_dbg.ib(6).rcv_stuck;
+  TRIG1(3)(27)           <= swc_dbg.ib(7).rcv_stuck;
+  TRIG1(3)(28) <= swc_dbg.ib(0).pages_same;
+  TRIG1(3)(29) <= swc_dbg.ib(1).pages_same;
+  TRIG1(3)(30) <= swc_dbg.ib(6).pages_same;
+  TRIG1(3)(31) <= swc_dbg.ib(7).pages_same;
+
+  TRIG2(3)(0)            <= swc_dbg.free(0).free;
+  TRIG2(3)(1)            <= swc_dbg.free(0).free_done;
+  TRIG2(3)(2)            <= swc_dbg.free(0).ffree;
+  TRIG2(3)(3)            <= swc_dbg.free(0).ffree_done;
+  TRIG2(3)(10 downto 4)  <= swc_dbg.ib(0).rp_ll_entry_size;
+  TRIG2(3)(13 downto 11) <= swc_dbg.free(0).fsm;
+  TRIG2(3)(14)           <= swc_dbg.free(0).ib_ffree;
+  TRIG2(3)(15)           <= swc_dbg.free(0).ib_ffree_done;
+  TRIG2(3)(21 downto 16) <= swc_dbg.free(0).ib_pgadr(5 downto 0);
+  TRIG2(3)(24)           <= swc_dbg.ib(0).pckstart_in_adv;
+  TRIG2(3)(25)           <= swc_dbg.ib(0).pckinter_in_adv;
+  TRIG2(3)(30)           <= swc_dbg.ib(0).ll_wr;
+  TRIG2(3)(31)           <= swc_dbg.ib(0).ll_wr_done;
+
+  TRIG3(3)(0)            <= swc_dbg.free(1).free;
+  TRIG3(3)(1)            <= swc_dbg.free(1).free_done;
+  TRIG3(3)(2)            <= swc_dbg.free(1).ffree;
+  TRIG3(3)(3)            <= swc_dbg.free(1).ffree_done;
+  TRIG3(3)(10 downto 4)  <= swc_dbg.ib(1).rp_ll_entry_size;
+  TRIG3(3)(13 downto 11) <= swc_dbg.free(1).fsm;
+  TRIG3(3)(14)           <= swc_dbg.free(1).ib_ffree;
+  TRIG3(3)(15)           <= swc_dbg.free(1).ib_ffree_done;
+  TRIG3(3)(21 downto 16) <= swc_dbg.free(1).ib_pgadr(5 downto 0);
+  TRIG3(3)(24)           <= swc_dbg.ib(1).pckstart_in_adv;
+  TRIG3(3)(25)           <= swc_dbg.ib(1).pckinter_in_adv;
+  TRIG3(3)(30)           <= swc_dbg.ib(1).ll_wr;
+  TRIG3(3)(31)           <= swc_dbg.ib(1).ll_wr_done;
+
+  TRIG4(3)(0)            <= swc_dbg.free(6).free;
+  TRIG4(3)(1)            <= swc_dbg.free(6).free_done;
+  TRIG4(3)(2)            <= swc_dbg.free(6).ffree;
+  TRIG4(3)(3)            <= swc_dbg.free(6).ffree_done;
+  TRIG4(3)(10 downto 4)  <= swc_dbg.ib(6).rp_ll_entry_size;
+  TRIG4(3)(13 downto 11) <= swc_dbg.free(6).fsm;
+  TRIG4(3)(14)           <= swc_dbg.free(6).ib_ffree;
+  TRIG4(3)(15)           <= swc_dbg.free(6).ib_ffree_done;
+  TRIG4(3)(21 downto 16) <= swc_dbg.free(6).ib_pgadr(5 downto 0);
+  TRIG4(3)(24)           <= swc_dbg.ib(6).pckstart_in_adv;
+  TRIG4(3)(25)           <= swc_dbg.ib(6).pckinter_in_adv;
+  TRIG4(3)(30)           <= swc_dbg.ib(6).ll_wr;
+  TRIG4(3)(31)           <= swc_dbg.ib(6).ll_wr_done;
+
+  TRIG5(3)(0)            <= swc_dbg.free(7).free;
+  TRIG5(3)(1)            <= swc_dbg.free(7).free_done;
+  TRIG5(3)(2)            <= swc_dbg.free(7).ffree;
+  TRIG5(3)(3)            <= swc_dbg.free(7).ffree_done;
+  TRIG5(3)(10 downto 4)  <= swc_dbg.ib(7).rp_ll_entry_size;
+  TRIG5(3)(13 downto 11) <= swc_dbg.free(7).fsm;
+  TRIG5(3)(14)           <= swc_dbg.free(7).ib_ffree;
+  TRIG5(3)(15)           <= swc_dbg.free(7).ib_ffree_done;
+  TRIG5(3)(21 downto 16) <= swc_dbg.free(7).ib_pgadr(5 downto 0);
+  TRIG5(3)(24)           <= swc_dbg.ib(7).pckstart_in_adv;
+  TRIG5(3)(25)           <= swc_dbg.ib(7).pckinter_in_adv;
+  TRIG5(3)(30)           <= swc_dbg.ib(7).ll_wr;
+  TRIG5(3)(31)           <= swc_dbg.ib(7).ll_wr_done;
+
+  TRIG6(3)(3 downto 0)   <= swc_dbg.ib(0).rcv_fsm;
+  TRIG6(3)(7 downto 4)   <= swc_dbg.ib(0).trans_fsm;
+  TRIG6(3)(11 downto 8)  <= swc_dbg.ib(0).ll_fsm;
+  TRIG6(3)(12)           <= swc_dbg.ib(0).new_pck_first_page;
+  TRIG6(3)(13)           <= swc_dbg.ib(0).mpm_dlast_d0;
+  TRIG6(3)(14)           <= swc_dbg.ib(0).mpm_pg_req_d0;
+  TRIG6(3)(15)           <= swc_dbg.ib(0).rp_rcv_fpage;
+  TRIG6(3)(16)           <= swc_dbg.mll.rv(0).rd_valid;
+  TRIG6(3)(17)           <= swc_dbg.mll.rv(0).req_o;
+  TRIG6(3)(23 downto 18) <= swc_dbg.mll.rv(0).rd_adr(5 downto 0);
+  TRIG6(3)(29 downto 24) <= swc_dbg.ib(0).ll_page(5 downto 0);
+  TRIG6(3)(30)           <= swc_dbg.ib(0).ll_page_valid;
+  TRIG6(3)(31)           <= swc_dbg.ib(0).ll_eof;
+
+  TRIG7(3)(3 downto 0)   <= swc_dbg.ib(1).rcv_fsm;
+  TRIG7(3)(7 downto 4)   <= swc_dbg.ib(1).trans_fsm;
+  TRIG7(3)(11 downto 8)  <= swc_dbg.ib(1).ll_fsm;
+  TRIG7(3)(12)           <= swc_dbg.ib(1).new_pck_first_page;
+  TRIG7(3)(13)           <= swc_dbg.ib(1).mpm_dlast_d0;
+  TRIG7(3)(14)           <= swc_dbg.ib(1).mpm_pg_req_d0;
+  TRIG7(3)(15)           <= swc_dbg.ib(1).rp_rcv_fpage;
+  TRIG7(3)(16)           <= swc_dbg.mll.rv(1).rd_valid;
+  TRIG7(3)(17)           <= swc_dbg.mll.rv(1).req_o;
+  TRIG7(3)(23 downto 18) <= swc_dbg.mll.rv(1).rd_adr(5 downto 0);
+  TRIG7(3)(29 downto 24) <= swc_dbg.ib(1).ll_page(5 downto 0);
+  TRIG7(3)(30)           <= swc_dbg.ib(1).ll_page_valid;
+  TRIG7(3)(31)           <= swc_dbg.ib(1).ll_eof;
+
+  TRIG8(3)(3 downto 0)   <= swc_dbg.ib(6).rcv_fsm;
+  TRIG8(3)(7 downto 4)   <= swc_dbg.ib(6).trans_fsm;
+  TRIG8(3)(11 downto 8)  <= swc_dbg.ib(6).ll_fsm;
+  TRIG8(3)(12)           <= swc_dbg.ib(6).new_pck_first_page;
+  TRIG8(3)(13)           <= swc_dbg.ib(6).mpm_dlast_d0;
+  TRIG8(3)(14)           <= swc_dbg.ib(6).mpm_pg_req_d0;
+  TRIG8(3)(15)           <= swc_dbg.ib(6).rp_rcv_fpage;
+  TRIG8(3)(16)           <= swc_dbg.mll.rv(6).rd_valid;
+  TRIG8(3)(17)           <= swc_dbg.mll.rv(6).req_o;
+  TRIG8(3)(23 downto 18) <= swc_dbg.mll.rv(6).rd_adr(5 downto 0);
+  TRIG8(3)(29 downto 24) <= swc_dbg.ib(6).ll_page(5 downto 0);
+  TRIG8(3)(30)           <= swc_dbg.ib(6).ll_page_valid;
+  TRIG8(3)(31)           <= swc_dbg.ib(6).ll_eof;
+
+  TRIG9(3)(3 downto 0)   <= swc_dbg.ib(7).rcv_fsm;
+  TRIG9(3)(7 downto 4)   <= swc_dbg.ib(7).trans_fsm;
+  TRIG9(3)(11 downto 8)  <= swc_dbg.ib(7).ll_fsm;
+  TRIG9(3)(12)           <= swc_dbg.ib(7).new_pck_first_page;
+  TRIG9(3)(13)           <= swc_dbg.ib(7).mpm_dlast_d0;
+  TRIG9(3)(14)           <= swc_dbg.ib(7).mpm_pg_req_d0;
+  TRIG9(3)(15)           <= swc_dbg.ib(7).rp_rcv_fpage;
+  TRIG9(3)(16)           <= swc_dbg.mll.rv(7).rd_valid;
+  TRIG9(3)(17)           <= swc_dbg.mll.rv(7).req_o;
+  TRIG9(3)(23 downto 18) <= swc_dbg.mll.rv(7).rd_adr(5 downto 0);
+  TRIG9(3)(29 downto 24) <= swc_dbg.ib(7).ll_page(5 downto 0);
+  TRIG9(3)(30)           <= swc_dbg.ib(7).ll_page_valid;
+  TRIG9(3)(31)           <= swc_dbg.ib(7).ll_eof;
+
+  TRIG10(3)(0)           <= swc_dbg.ob(0).cycle_frozen;
+  TRIG10(3)(1)           <= swc_dbg.ob(1).cycle_frozen;
+  TRIG10(3)(2)           <= swc_dbg.ob(6).cycle_frozen;
+  TRIG10(3)(3)           <= swc_dbg.ob(7).cycle_frozen;
+  TRIG10(3)(4)           <= swc_dbg.ib(0).finish_rcv;
+  TRIG10(3)(5)           <= swc_dbg.ib(0).pck_eof;
+  TRIG10(3)(6)           <= swc_dbg.ib(0).pck_err;
+  TRIG10(3)(7)           <= swc_dbg.ib(0).mem_full_dump;
+  TRIG10(3)(8)           <= swc_dbg.ib(0).in_pck_dvalid;
+  TRIG10(3)(9)           <= swc_dbg.ib(1).finish_rcv;
+  TRIG10(3)(10)          <= swc_dbg.ib(1).pck_eof;
+  TRIG10(3)(11)          <= swc_dbg.ib(1).pck_err;
+  TRIG10(3)(12)          <= swc_dbg.ib(1).mem_full_dump;
+  TRIG10(3)(13)          <= swc_dbg.ib(1).in_pck_dvalid;
+  TRIG10(3)(14)          <= swc_dbg.ib(6).finish_rcv;
+  TRIG10(3)(15)          <= swc_dbg.ib(6).pck_eof;
+  TRIG10(3)(16)          <= swc_dbg.ib(6).pck_err;
+  TRIG10(3)(17)          <= swc_dbg.ib(6).mem_full_dump;
+  TRIG10(3)(18)          <= swc_dbg.ib(6).in_pck_dvalid;
+  TRIG10(3)(19)          <= swc_dbg.ib(7).finish_rcv;
+  TRIG10(3)(20)          <= swc_dbg.ib(7).pck_eof;
+  TRIG10(3)(21)          <= swc_dbg.ib(7).pck_err;
+  TRIG10(3)(22)          <= swc_dbg.ib(7).mem_full_dump;
+  TRIG10(3)(23)          <= swc_dbg.ib(7).in_pck_dvalid;
+
+  --bank 4
+  TRIG0(4)(5 downto 0) <= swc_dbg.mmu.palloc.free_pages(5 downto 0);
+  TRIG0(4)(11 downto 6)  <= swc_dbg.ib(0).page_start(5 downto 0);
+  TRIG0(4)(17 downto 12) <= swc_dbg.ib(0).page_inter(5 downto 0);
+  TRIG0(4)(23 downto 18) <= swc_dbg.ib(1).page_start(5 downto 0);
+  TRIG0(4)(29 downto 24) <= swc_dbg.ib(1).page_inter(5 downto 0);
+  TRIG1(4)(5 downto 0)   <= swc_dbg.ib(6).page_start(5 downto 0);
+  TRIG1(4)(11 downto 6)  <= swc_dbg.ib(6).page_inter(5 downto 0);
+  TRIG1(4)(17 downto 12) <= swc_dbg.ib(7).page_start(5 downto 0);
+  TRIG1(4)(23 downto 18) <= swc_dbg.ib(7).page_inter(5 downto 0);
+  TRIG1(4)(24)           <= swc_dbg.ib(0).rcv_stuck;
+  TRIG1(4)(25)           <= swc_dbg.ib(1).rcv_stuck;
+  TRIG1(4)(26)           <= swc_dbg.ib(6).rcv_stuck;
+  TRIG1(4)(27)           <= swc_dbg.ib(7).rcv_stuck;
+  TRIG1(4)(28) <= swc_dbg.ib(0).new_pck_first_page;
+  TRIG1(4)(29) <= swc_dbg.ib(1).new_pck_first_page;
+  TRIG1(4)(30) <= swc_dbg.ib(6).new_pck_first_page;
+  TRIG1(4)(31) <= swc_dbg.ib(7).new_pck_first_page;
+
+  TRIG2(4)(2 downto 0)    <= swc_dbg.ib(0).alloc_fsm;
+  TRIG2(4)(6 downto 3)    <= swc_dbg.ib(0).rcv_fsm;
+  TRIG2(4)(10 downto 7)   <= swc_dbg.ib(0).trans_fsm;
+  TRIG2(4)(14 downto 11)  <= swc_dbg.ib(0).ll_fsm;
+  TRIG2(4)(15)            <= swc_dbg.ib(0).ll_wr;
+  TRIG2(4)(16)            <= swc_dbg.ib(0).ll_wr_done;
+  TRIG2(4)(17)            <= swc_dbg.ib(0).ll_page_valid;
+  TRIG2(4)(18)            <= swc_dbg.ib(0).ll_eof;
+  TRIG2(4)(24 downto  19) <= swc_dbg.ib(0).ll_page(5 downto 0);
+  TRIG2(4)(30 downto 25)  <= swc_dbg.ib(0).ll_next_page(5 downto 0);
+  TRIG2(4)(31)            <= swc_dbg.ib(0).mpm_dlast_d0;
+
+  TRIG3(4)(2 downto 0)    <= swc_dbg.ib(1).alloc_fsm;
+  TRIG3(4)(6 downto 3)    <= swc_dbg.ib(1).rcv_fsm;
+  TRIG3(4)(10 downto 7)   <= swc_dbg.ib(1).trans_fsm;
+  TRIG3(4)(14 downto 11)  <= swc_dbg.ib(1).ll_fsm;
+  TRIG3(4)(15)            <= swc_dbg.ib(1).ll_wr;
+  TRIG3(4)(16)            <= swc_dbg.ib(1).ll_wr_done;
+  TRIG3(4)(17)            <= swc_dbg.ib(1).ll_page_valid;
+  TRIG3(4)(18)            <= swc_dbg.ib(1).ll_eof;
+  TRIG3(4)(24 downto  19) <= swc_dbg.ib(1).ll_page(5 downto 0);
+  TRIG3(4)(30 downto 25)  <= swc_dbg.ib(1).ll_next_page(5 downto 0);
+  TRIG3(4)(31)            <= swc_dbg.ib(1).mpm_dlast_d0;
+
+  TRIG4(4)(2 downto 0)    <= swc_dbg.ib(6).alloc_fsm;
+  TRIG4(4)(6 downto 3)    <= swc_dbg.ib(6).rcv_fsm;
+  TRIG4(4)(10 downto 7)   <= swc_dbg.ib(6).trans_fsm;
+  TRIG4(4)(14 downto 11)  <= swc_dbg.ib(6).ll_fsm;
+  TRIG4(4)(15)            <= swc_dbg.ib(6).ll_wr;
+  TRIG4(4)(16)            <= swc_dbg.ib(6).ll_wr_done;
+  TRIG4(4)(17)            <= swc_dbg.ib(6).ll_page_valid;
+  TRIG4(4)(18)            <= swc_dbg.ib(6).ll_eof;
+  TRIG4(4)(24 downto  19) <= swc_dbg.ib(6).ll_page(5 downto 0);
+  TRIG4(4)(30 downto 25)  <= swc_dbg.ib(6).ll_next_page(5 downto 0);
+  TRIG4(4)(31)            <= swc_dbg.ib(6).mpm_dlast_d0;
+
+  TRIG5(4)(2 downto 0)    <= swc_dbg.ib(7).alloc_fsm;
+  TRIG5(4)(6 downto 3)    <= swc_dbg.ib(7).rcv_fsm;
+  TRIG5(4)(10 downto 7)   <= swc_dbg.ib(7).trans_fsm;
+  TRIG5(4)(14 downto 11)  <= swc_dbg.ib(7).ll_fsm;
+  TRIG5(4)(15)            <= swc_dbg.ib(7).ll_wr;
+  TRIG5(4)(16)            <= swc_dbg.ib(7).ll_wr_done;
+  TRIG5(4)(17)            <= swc_dbg.ib(7).ll_page_valid;
+  TRIG5(4)(18)            <= swc_dbg.ib(7).ll_eof;
+  TRIG5(4)(24 downto  19) <= swc_dbg.ib(7).ll_page(5 downto 0);
+  TRIG5(4)(30 downto 25)  <= swc_dbg.ib(7).ll_next_page(5 downto 0);
+  TRIG5(4)(31)            <= swc_dbg.ib(7).mpm_dlast_d0;
+
+  TRIG6(4)(0)           <= swc_dbg.ib(0).force_free;
+  TRIG6(4)(1)           <= swc_dbg.ib(0).force_free_done;
+  TRIG6(4)(2)           <= swc_dbg.ib(1).force_free;
+  TRIG6(4)(3)           <= swc_dbg.ib(1).force_free_done;
+  TRIG6(4)(4)           <= swc_dbg.ib(6).force_free;
+  TRIG6(4)(5)           <= swc_dbg.ib(6).force_free_done;
+  TRIG6(4)(6)           <= swc_dbg.ib(7).force_free;
+  TRIG6(4)(7)           <= swc_dbg.ib(7).force_free_done;
+  TRIG6(4)(8)           <= swc_dbg.ib(0).ll_pckstart_stored;
+  TRIG6(4)(9)           <= swc_dbg.ib(1).ll_pckstart_stored;
+  TRIG6(4)(10)          <= swc_dbg.ib(6).ll_pckstart_stored;
+  TRIG6(4)(11)          <= swc_dbg.ib(7).ll_pckstart_stored;
+  TRIG6(4)(12)          <= swc_dbg.ib(0).ffree_mask;
+  TRIG6(4)(13)          <= swc_dbg.ib(1).ffree_mask;
+  TRIG6(4)(14)          <= swc_dbg.ib(6).ffree_mask;
+  TRIG6(4)(15)          <= swc_dbg.ib(7).ffree_mask;
+  TRIG6(4)(16)          <= swc_dbg.ib(0).tr_drop_stuck;
+  TRIG6(4)(17)          <= swc_dbg.ib(1).tr_drop_stuck;
+  TRIG6(4)(18)          <= swc_dbg.ib(6).tr_drop_stuck;
+  TRIG6(4)(19)          <= swc_dbg.ib(7).tr_drop_stuck;
+  TRIG6(4)(20)          <= swc_dbg.ib(0).pck_sof;
+  TRIG6(4)(21)          <= swc_dbg.ib(0).pck_eof;
+  TRIG6(4)(22)          <= swc_dbg.ib(1).pck_sof;
+  TRIG6(4)(23)          <= swc_dbg.ib(1).pck_eof;
+  TRIG6(4)(24)          <= swc_dbg.ib(6).pck_sof;
+  TRIG6(4)(25)          <= swc_dbg.ib(6).pck_eof;
+  TRIG6(4)(26)          <= swc_dbg.ib(7).pck_sof;
+  TRIG6(4)(27)          <= swc_dbg.ib(7).pck_eof;
+  TRIG6(4)(28)          <= swc_dbg.ib(0).tr_wait_stuck;
+  TRIG6(4)(29)          <= swc_dbg.ib(1).tr_wait_stuck;
+  TRIG6(4)(30)          <= swc_dbg.ib(6).tr_wait_stuck;
+  TRIG6(4)(31)          <= swc_dbg.ib(7).tr_wait_stuck;
+
+  TRIG7(4)(5 downto 0)  <= swc_dbg.ib(0).cur_pckstart(5 downto 0);
+  TRIG7(4)(11 downto 6) <= swc_dbg.ib(0).mpm_pg_adr(5 downto 0);
+  TRIG7(4)(17 downto 12)<= swc_dbg.ib(1).cur_pckstart(5 downto 0);
+  TRIG7(4)(23 downto 18)<= swc_dbg.ib(1).mpm_pg_adr(5 downto 0);
+  TRIG7(4)(24)          <= swc_dbg.ib(0).rtu_valid;
+  TRIG7(4)(25)          <= swc_dbg.ib(0).rtu_ack;
+  TRIG7(4)(26)          <= swc_dbg.ib(1).rtu_valid;
+  TRIG7(4)(27)          <= swc_dbg.ib(1).rtu_ack;
+  TRIG7(4)(28)          <= swc_dbg.ib(6).rtu_valid;
+  TRIG7(4)(29)          <= swc_dbg.ib(6).rtu_ack;
+  TRIG7(4)(30)          <= swc_dbg.ib(7).rtu_valid;
+  TRIG7(4)(31)          <= swc_dbg.ib(7).rtu_ack;
+
+  TRIG8(4)(5 downto 0)  <= swc_dbg.ib(6).cur_pckstart(5 downto 0);
+  TRIG8(4)(11 downto 6) <= swc_dbg.ib(6).mpm_pg_adr(5 downto 0);
+  TRIG8(4)(17 downto 12)<= swc_dbg.ib(7).cur_pckstart(5 downto 0);
+  TRIG8(4)(23 downto 18)<= swc_dbg.ib(7).mpm_pg_adr(5 downto 0);
+  TRIG8(4)(24)          <= swc_dbg.ob(0).cycle_frozen;
+  TRIG8(4)(25)          <= swc_dbg.ob(1).cycle_frozen;
+  TRIG8(4)(26)          <= swc_dbg.ob(6).cycle_frozen;
+  TRIG8(4)(27)          <= swc_dbg.ob(7).cycle_frozen;
+  TRIG8(4)(28)          <= swc_dbg.ib(0).mpm_pg_req_d0;
+  TRIG8(4)(29)          <= swc_dbg.ib(1).mpm_pg_req_d0;
+  TRIG8(4)(30)          <= swc_dbg.ib(6).mpm_pg_req_d0;
+  TRIG8(4)(31)          <= swc_dbg.ib(7).mpm_pg_req_d0;
+
+  TRIG9(4)(0)           <= swc_dbg.ib(0).mpm_dvalid;
+  TRIG9(4)(1)           <= swc_dbg.ib(1).mpm_dvalid;
+  TRIG9(4)(2)           <= swc_dbg.ib(6).mpm_dvalid;
+  TRIG9(4)(3)           <= swc_dbg.ib(7).mpm_dvalid;
+  TRIG9(4)(10 downto 4)  <= swc_dbg.ib(0).page_word_cnt;
+  TRIG9(4)(17 downto 11) <= swc_dbg.ib(1).page_word_cnt;
+  TRIG9(4)(24 downto 18) <= swc_dbg.ib(6).page_word_cnt;
+  TRIG9(4)(31 downto 25) <= swc_dbg.ib(7).page_word_cnt;
+
+  TRIG10(4)(0)          <= swc_dbg.ib(0).pck_err;
+  TRIG10(4)(1)          <= swc_dbg.ib(1).pck_err;
+  TRIG10(4)(2)          <= swc_dbg.ib(6).pck_err;
+  TRIG10(4)(3)          <= swc_dbg.ib(7).pck_err;
+  TRIG10(4)(4)          <= swc_dbg.ib(0).rtu_sof_bug;
+  TRIG10(4)(5)          <= swc_dbg.ib(0).current_drop;
+  TRIG10(4)(6)          <= swc_dbg.ib(0).almost_full_i;
+  TRIG10(4)(7)          <= swc_dbg.ib(1).rtu_sof_bug;
+  TRIG10(4)(8)          <= swc_dbg.ib(1).current_drop;
+  TRIG10(4)(9)         <= swc_dbg.ib(1).almost_full_i;
+  TRIG10(4)(10)         <= swc_dbg.ib(6).rtu_sof_bug;
+  TRIG10(4)(11)         <= swc_dbg.ib(6).current_drop;
+  TRIG10(4)(12)         <= swc_dbg.ib(6).almost_full_i;
+  TRIG10(4)(13)         <= swc_dbg.ib(7).rtu_sof_bug;
+  TRIG10(4)(14)         <= swc_dbg.ib(7).current_drop;
+  TRIG10(4)(15)         <= swc_dbg.ib(7).almost_full_i;
+  TRIG10(4)(23 downto 16) <= swc_dbg.ib(0).rtu_rsp_cnt;
+  TRIG10(4)(31 downto 24) <= swc_dbg.ib(0).sof_cnt;
+
+  TRIG11(4)(0)   <= or_reduce(std_logic_vector(dbg_rtu_bug(0)));
+  TRIG11(4)(1)   <= or_reduce(std_logic_vector(dbg_rtu_bug(1)));
+  TRIG11(4)(2)   <= or_reduce(std_logic_vector(dbg_rtu_bug(6)));
+  TRIG11(4)(3)   <= or_reduce(std_logic_vector(dbg_rtu_bug(7)));
+  TRIG11(4)(4)   <= swc_dbg.ib(0).pck_sof_rcv_reg;
+  TRIG11(4)(5)   <= swc_dbg.ib(0).pck_sof_ack;
+  TRIG11(4)(6)   <= swc_dbg.ib(1).pck_sof_rcv_reg;
+  TRIG11(4)(7)   <= swc_dbg.ib(1).pck_sof_ack;
+  TRIG11(4)(8)   <= swc_dbg.ib(6).pck_sof_rcv_reg;
+  TRIG11(4)(9)   <= swc_dbg.ib(6).pck_sof_ack;
+  TRIG11(4)(10)  <= swc_dbg.ib(7).pck_sof_rcv_reg;
+  TRIG11(4)(11)  <= swc_dbg.ib(7).pck_sof_ack;
+  TRIG11(4)(12)  <= swc_dbg.ib(0).sof_normal;
+  TRIG11(4)(13)  <= swc_dbg.ib(0).sof_on_stall;
+  TRIG11(4)(14)  <= swc_dbg.ib(0).sof_delayed;
+  TRIG11(4)(15)  <= swc_dbg.ib(0).eof_normal;
+  TRIG11(4)(16)  <= swc_dbg.ib(0).eof_on_pause;
+  TRIG11(4)(17)  <= swc_dbg.ib(1).sof_normal;
+  TRIG11(4)(18)  <= swc_dbg.ib(1).sof_on_stall;
+  TRIG11(4)(19)  <= swc_dbg.ib(1).sof_delayed;
+  TRIG11(4)(20)  <= swc_dbg.ib(1).eof_normal;
+  TRIG11(4)(21)  <= swc_dbg.ib(1).eof_on_pause;
+  TRIG11(4)(22)  <= swc_dbg.ib(6).sof_normal;
+  TRIG11(4)(23)  <= swc_dbg.ib(6).sof_on_stall;
+  TRIG11(4)(24)  <= swc_dbg.ib(6).sof_delayed;
+  TRIG11(4)(25)  <= swc_dbg.ib(6).eof_normal;
+  TRIG11(4)(26)  <= swc_dbg.ib(6).eof_on_pause;
+  TRIG11(4)(27)  <= swc_dbg.ib(7).sof_normal;
+  TRIG11(4)(28)  <= swc_dbg.ib(7).sof_on_stall;
+  TRIG11(4)(29)  <= swc_dbg.ib(7).sof_delayed;
+  TRIG11(4)(30)  <= swc_dbg.ib(7).eof_normal;
+  TRIG11(4)(31)  <= swc_dbg.ib(7).eof_on_pause;
+
+  --bank 5
+  TRIG0(5)(5 downto 0) <= swc_dbg.mmu.palloc.free_pages(5 downto 0);
+  TRIG0(5)(11 downto 6)  <= swc_dbg.ib(0).page_start(5 downto 0);
+  TRIG0(5)(17 downto 12) <= swc_dbg.ib(0).page_inter(5 downto 0);
+  TRIG0(5)(23 downto 18) <= swc_dbg.ib(1).page_start(5 downto 0);
+  TRIG0(5)(29 downto 24) <= swc_dbg.ib(1).page_inter(5 downto 0);
+  TRIG0(5)(31 downto 30) <= (others=>'0');
+
+  TRIG1(5)(5 downto 0)   <= swc_dbg.ib(6).page_start(5 downto 0);
+  TRIG1(5)(11 downto 6)  <= swc_dbg.ib(6).page_inter(5 downto 0);
+  TRIG1(5)(17 downto 12) <= swc_dbg.ib(7).page_start(5 downto 0);
+  TRIG1(5)(23 downto 18) <= swc_dbg.ib(7).page_inter(5 downto 0);
+  TRIG1(5)(24)           <= swc_dbg.ib(0).rcv_stuck;
+  TRIG1(5)(25)           <= swc_dbg.ib(1).rcv_stuck;
+  TRIG1(5)(26)           <= swc_dbg.ib(6).rcv_stuck;
+  TRIG1(5)(27)           <= swc_dbg.ib(7).rcv_stuck;
+  TRIG1(5)(28)           <= swc_dbg.ob(8).cycle_frozen;
+  TRIG1(5)(29)           <= swc_dbg.ob(1).cycle_frozen;
+  TRIG1(5)(30)           <= swc_dbg.ob(6).cycle_frozen;
+  TRIG1(5)(31)           <= swc_dbg.ob(7).cycle_frozen;
+
+  TRIG2(5)(3 downto 0)   <= swc_dbg.ob(8).send_fsm;
+  TRIG2(5)(6 downto 4)   <= swc_dbg.ob(8).prep_fsm(2 downto 0);
+  TRIG2(5)(10 downto 7)  <= swc_dbg.ob(1).send_fsm;
+  TRIG2(5)(13 downto 11) <= swc_dbg.ob(1).prep_fsm(2 downto 0);
+  TRIG2(5)(17 downto 14) <= swc_dbg.ob(6).send_fsm;
+  TRIG2(5)(20 downto 18) <= swc_dbg.ob(6).prep_fsm(2 downto 0);
+  TRIG2(5)(24 downto 21) <= swc_dbg.ob(7).send_fsm;
+  TRIG2(5)(27 downto 25) <= swc_dbg.ob(7).prep_fsm(2 downto 0);
+  TRIG2(5)(28) <= swc_dbg.ob(8).mpm_pgreq;
+  TRIG2(5)(29) <= swc_dbg.ob(1).mpm_pgreq;
+  TRIG2(5)(30) <= swc_dbg.ob(6).mpm_pgreq;
+  TRIG2(5)(31) <= swc_dbg.ob(7).mpm_pgreq;
+
+  TRIG3(5)(5 downto 0)   <= swc_dbg.mpm.read.ll_adr(5 downto 0);
+  TRIG3(5)(15 downto 6)  <= swc_dbg.mpm.read.io(8).words_xmitted;
+  TRIG3(5)(25 downto 16) <= swc_dbg.mpm.read.io(8).words_total; --last_pg_start_ptr;
+  TRIG3(5)(26)         <= swc_dbg.mpm.read.io(1).fetch_ack;
+  TRIG3(5)(27)         <= swc_dbg.mpm.read.io(6).fetch_first;
+  TRIG3(5)(28)         <= swc_dbg.mpm.read.io(6).fetch_ack;
+  TRIG3(5)(29)         <= swc_dbg.mpm.read.io(7).fetch_first;
+  TRIG3(5)(30)         <= swc_dbg.mpm.read.io(7).fetch_ack;
+
+  TRIG4(5)(0)          <= swc_dbg.mpm.read.io(8).ll_req;
+  TRIG4(5)(1)          <= swc_dbg.mpm.read.io(8).ll_grant;
+  TRIG4(5)(7 downto 2) <= swc_dbg.mpm.read.io(8).ll_adr(5 downto 0);
+  TRIG4(5)(14 downto 8)<= swc_dbg.mpm.read.io(8).fetch_pg_words;
+  TRIG4(5)(15)         <= swc_dbg.mpm.read.io(8).ll_eof;
+  TRIG4(5)(16)         <= swc_dbg.mpm.read.io(8).fetch_first;
+  TRIG4(5)(17)         <= swc_dbg.mpm.read.io(8).fetch_ack;
+  TRIG4(5)(24 downto 18) <= swc_dbg.mpm.read.io(8).ll_size;
+  TRIG4(5)(25)         <= swc_dbg.mpm.read.io(1).fetch_first;
+  TRIG4(5)(26)         <= swc_dbg.ob(8).data_error;
+  TRIG4(5)(27)         <= swc_dbg.ob(8).mpm_dlast;
+  TRIG4(5)(28)         <= swc_dbg.mpm.read.io(8).pre_fetch;
+  TRIG4(5)(29)         <= swc_dbg.mpm.read.io(8).last_int;
+  TRIG4(5)(30)         <= swc_dbg.mpm.read.io(8).rport_dreq;
+  TRIG4(5)(31)         <= swc_dbg.mpm.read.io(8).rport_pg_req;
+
+  TRIG5(5)(0)          <= swc_dbg.mpm.read.io(1).ll_req;
+  TRIG5(5)(1)          <= swc_dbg.mpm.read.io(1).ll_grant;
+  TRIG5(5)(7 downto 2) <= swc_dbg.mpm.read.io(1).ll_adr(5 downto 0);
+  TRIG5(5)(14 downto 8)<= swc_dbg.mpm.read.io(1).fetch_pg_words;
+  TRIG5(5)(15)         <= swc_dbg.mpm.read.io(1).ll_eof;
+  TRIG5(5)(16)           <= swc_dbg.ib(1).ll_wr;
+  TRIG5(5)(17)           <= swc_dbg.ib(1).ll_wr_done;
+  TRIG5(5)(18)           <= swc_dbg.ib(1).ll_page_valid;
+  TRIG5(5)(19)           <= swc_dbg.ib(1).ll_eof;
+  TRIG5(5)(25 downto 20) <= swc_dbg.ib(1).ll_page(5 downto 0);
+  TRIG5(5)(26)         <= swc_dbg.ob(1).data_error;
+  TRIG5(5)(27)         <= swc_dbg.ob(1).mpm_dlast;
+  TRIG5(5)(28)         <= swc_dbg.mpm.read.io(1).pre_fetch;
+  TRIG5(5)(29)         <= swc_dbg.mpm.read.io(1).last_int;
+  TRIG5(5)(30)         <= swc_dbg.mpm.read.io(1).rport_dreq;
+  TRIG5(5)(31)         <= swc_dbg.mpm.read.io(1).rport_pg_req;
+
+  TRIG6(5)(0)          <= swc_dbg.mpm.read.io(6).ll_req;
+  TRIG6(5)(1)          <= swc_dbg.mpm.read.io(6).ll_grant;
+  TRIG6(5)(7 downto 2) <= swc_dbg.mpm.read.io(6).ll_adr(5 downto 0);
+  TRIG6(5)(13 downto 8)<= swc_dbg.mpm.read.io(6).ll_next_page(5 downto 0);
+  TRIG6(5)(14)         <= swc_dbg.mpm.read.io(6).ll_eof;
+  TRIG6(5)(15)         <= swc_dbg.mpm.read.io(6).ll_valid;
+  TRIG6(5)(25 downto 16) <= swc_dbg.mpm.read.io(6).words_total;
+  TRIG6(5)(26)         <= swc_dbg.ob(6).data_error;
+  TRIG6(5)(27)         <= swc_dbg.ob(6).mpm_dlast;
+  TRIG6(5)(28)         <= swc_dbg.mpm.read.io(6).pre_fetch;
+  TRIG6(5)(29)         <= swc_dbg.mpm.read.io(6).last_int;
+  TRIG6(5)(30)         <= swc_dbg.mpm.read.io(6).rport_dreq;
+  TRIG6(5)(31)         <= swc_dbg.mpm.read.io(6).rport_pg_req;
+
+  TRIG7(5)(0)          <= swc_dbg.mpm.read.io(7).ll_req;
+  TRIG7(5)(1)          <= swc_dbg.mpm.read.io(7).ll_grant;
+  TRIG7(5)(7 downto 2) <= swc_dbg.mpm.read.io(7).ll_adr(5 downto 0);
+  TRIG7(5)(13 downto 8)<= swc_dbg.mpm.read.io(7).ll_next_page(5 downto 0);
+  TRIG7(5)(14)         <= swc_dbg.mpm.read.io(7).ll_eof;
+  TRIG7(5)(15)         <= swc_dbg.mpm.read.io(7).ll_valid;
+  TRIG7(5)(25 downto 16) <= swc_dbg.mpm.read.io(7).words_total;
+  TRIG7(5)(26)         <= swc_dbg.ob(7).data_error;
+  TRIG7(5)(27)         <= swc_dbg.ob(7).mpm_dlast;
+  TRIG7(5)(28)         <= swc_dbg.mpm.read.io(7).pre_fetch;
+  TRIG7(5)(29)         <= swc_dbg.mpm.read.io(7).last_int;
+  TRIG7(5)(30)         <= swc_dbg.mpm.read.io(7).rport_dreq;
+  TRIG7(5)(31)         <= swc_dbg.mpm.read.io(7).rport_pg_req;
+
+  TRIG8(5)(2 downto 0) <= swc_dbg.mpm.read.io(8).page_fsm;
+  TRIG8(5)(5 downto 3) <= swc_dbg.mpm.read.io(1).page_fsm;
+  TRIG8(5)(8 downto 6) <= swc_dbg.mpm.read.io(6).page_fsm;
+  TRIG8(5)(11 downto 9)<= swc_dbg.mpm.read.io(7).page_fsm;
+  TRIG8(5)(18 downto 12) <= swc_dbg.mpm.read.io(6).fetch_pg_words;
+  TRIG8(5)(25 downto 19) <= swc_dbg.mpm.read.io(7).fetch_pg_words;
+
+  TRIG9(5)(6 downto 0)   <= swc_dbg.mpm.read.io(1).ll_size;
+  TRIG9(5)(13 downto 7)  <= swc_dbg.mpm.read.io(6).ll_size;
+  TRIG9(5)(20 downto 14) <= swc_dbg.mpm.read.io(7).ll_size;
+  TRIG9(5)(31 downto 22) <= swc_dbg.mpm.read.io(7).words_xmitted;
+
+  TRIG10(5)(9 downto 0)   <= swc_dbg.mpm.read.io(1).words_xmitted;
+  TRIG10(5)(19 downto 10) <= swc_dbg.mpm.read.io(1).words_total;
+  TRIG10(5)(29 downto 20) <= swc_dbg.mpm.read.io(6).words_xmitted;
+
+  ----------------------------------------------------------------
+  TRIG0(6)(5 downto 0)   <= swc_dbg.mmu.palloc.free_pages(5 downto 0);
+  TRIG0(6)(11 downto 6)  <= swc_dbg.ib(0).page_start(5 downto 0);
+  TRIG0(6)(17 downto 12) <= swc_dbg.ib(0).page_inter(5 downto 0);
+  TRIG0(6)(23 downto 18) <= swc_dbg.ib(1).page_start(5 downto 0);
+  TRIG0(6)(29 downto 24) <= swc_dbg.ib(1).page_inter(5 downto 0);
+  TRIG1(6)(5 downto 0)   <= swc_dbg.ib(6).page_start(5 downto 0);
+  TRIG1(6)(11 downto 6)  <= swc_dbg.ib(6).page_inter(5 downto 0);
+  TRIG1(6)(17 downto 12) <= swc_dbg.ib(7).page_start(5 downto 0);
+  TRIG1(6)(23 downto 18) <= swc_dbg.ib(7).page_inter(5 downto 0);
+  TRIG1(6)(24)           <= swc_dbg.ib(0).rcv_stuck;
+  TRIG1(6)(25)           <= swc_dbg.ib(1).rcv_stuck;
+  TRIG1(6)(26)           <= swc_dbg.ib(6).rcv_stuck;
+  TRIG1(6)(27)           <= swc_dbg.ib(7).rcv_stuck;
+  TRIG1(6)(28) <= swc_dbg.ib(0).pages_same;
+  TRIG1(6)(29) <= swc_dbg.ib(1).pages_same;
+  TRIG1(6)(30) <= swc_dbg.ib(6).pages_same;
+  TRIG1(6)(31) <= swc_dbg.ib(7).pages_same;
+
+  TRIG2(6)(0)            <= swc_dbg.free(0).free;
+  TRIG2(6)(1)            <= swc_dbg.free(0).free_done;
+  TRIG2(6)(2)            <= swc_dbg.free(0).ffree;
+  TRIG2(6)(3)            <= swc_dbg.free(0).ffree_done;
+  TRIG2(6)(9 downto 4)   <= swc_dbg.free(0).pgadr(5 downto 0);
+  TRIG2(6)(10)           <= swc_dbg.free(1).free;
+  TRIG2(6)(11)           <= swc_dbg.free(1).free_done;
+  TRIG2(6)(12)           <= swc_dbg.free(1).ffree;
+  TRIG2(6)(13)           <= swc_dbg.free(1).ffree_done;
+  TRIG2(6)(19 downto 14) <= swc_dbg.free(1).pgadr(5 downto 0);
+  TRIG2(6)(20)           <= swc_dbg.free(6).free;
+  TRIG2(6)(21)           <= swc_dbg.free(6).free_done;
+  TRIG2(6)(22)           <= swc_dbg.free(6).ffree;
+  TRIG2(6)(23)           <= swc_dbg.free(6).ffree_done;
+  TRIG2(6)(29 downto 24) <= swc_dbg.free(6).pgadr(5 downto 0);
+  TRIG2(6)(31 downto 30) <= (others=>'0');
+
+  TRIG3(6)(0)            <= swc_dbg.free(7).free;
+  TRIG3(6)(1)            <= swc_dbg.free(7).free_done;
+  TRIG3(6)(2)            <= swc_dbg.free(7).ffree;
+  TRIG3(6)(3)            <= swc_dbg.free(7).ffree_done;
+  TRIG3(6)(9 downto 4)   <= swc_dbg.free(7).pgadr(5 downto 0);
+  TRIG3(6)(10)           <= swc_dbg.free(2).free;
+  TRIG3(6)(11)           <= swc_dbg.free(2).free_done;
+  TRIG3(6)(12)           <= swc_dbg.free(2).ffree;
+  TRIG3(6)(13)           <= swc_dbg.free(2).ffree_done;
+  TRIG3(6)(19 downto 14) <= swc_dbg.free(2).pgadr(5 downto 0);
+  TRIG3(6)(20)           <= swc_dbg.free(3).free;
+  TRIG3(6)(21)           <= swc_dbg.free(3).free_done;
+  TRIG3(6)(22)           <= swc_dbg.free(3).ffree;
+  TRIG3(6)(23)           <= swc_dbg.free(3).ffree_done;
+  TRIG3(6)(29 downto 24) <= swc_dbg.free(3).pgadr(5 downto 0);
+  TRIG3(6)(31 downto 30) <= (others=>'0');
+
+  TRIG4(6)(0)            <= swc_dbg.free(4).free;
+  TRIG4(6)(1)            <= swc_dbg.free(4).free_done;
+  TRIG4(6)(2)            <= swc_dbg.free(4).ffree;
+  TRIG4(6)(3)            <= swc_dbg.free(4).ffree_done;
+  TRIG4(6)(9 downto 4)   <= swc_dbg.free(4).pgadr(5 downto 0);
+  TRIG4(6)(10)           <= swc_dbg.free(5).free;
+  TRIG4(6)(11)           <= swc_dbg.free(5).free_done;
+  TRIG4(6)(12)           <= swc_dbg.free(5).ffree;
+  TRIG4(6)(13)           <= swc_dbg.free(5).ffree_done;
+  TRIG4(6)(19 downto 14) <= swc_dbg.free(5).pgadr(5 downto 0);
+  TRIG4(6)(20)           <= swc_dbg.free(8).free;
+  TRIG4(6)(21)           <= swc_dbg.free(8).free_done;
+  TRIG4(6)(22)           <= swc_dbg.free(8).ffree;
+  TRIG4(6)(23)           <= swc_dbg.free(8).ffree_done;
+  TRIG4(6)(29 downto 24) <= swc_dbg.free(8).pgadr(5 downto 0);
+  TRIG4(6)(31 downto 30) <= (others=>'0');
+
+  TRIG5(6)(0)           <= swc_dbg.ib(0).pta_transfer;
+  TRIG5(6)(1)           <= swc_dbg.ib(0).pta_transfer_ack;
+  TRIG5(6)(7 downto 2)  <= swc_dbg.ib(0).pta_pgadr(5 downto 0);
+  TRIG5(6)(15 downto 8) <= swc_dbg.ib(0).pta_mask;
+  TRIG5(6)(16)          <= swc_dbg.ob(0).pta_transfer_valid;
+  TRIG5(6)(17)          <= swc_dbg.ob(0).pta_ack;
+  TRIG5(6)(23 downto 18)<= swc_dbg.ob(0).pta_pgadr(5 downto 0);
+  TRIG5(6)(31 downto 24)<= (others=>'0');
+
+  TRIG6(6)(0)           <= swc_dbg.ib(1).pta_transfer;
+  TRIG6(6)(1)           <= swc_dbg.ib(1).pta_transfer_ack;
+  TRIG6(6)(7 downto 2)  <= swc_dbg.ib(1).pta_pgadr(5 downto 0);
+  TRIG6(6)(15 downto 8) <= swc_dbg.ib(1).pta_mask;
+  TRIG6(6)(16)          <= swc_dbg.ob(1).pta_transfer_valid;
+  TRIG6(6)(17)          <= swc_dbg.ob(1).pta_ack;
+  TRIG6(6)(23 downto 18)<= swc_dbg.ob(1).pta_pgadr(5 downto 0);
+  TRIG6(6)(31 downto 24)<= (others=>'0');
+
+  TRIG7(6)(0)           <= swc_dbg.ib(6).pta_transfer;
+  TRIG7(6)(1)           <= swc_dbg.ib(6).pta_transfer_ack;
+  TRIG7(6)(7 downto 2)  <= swc_dbg.ib(6).pta_pgadr(5 downto 0);
+  TRIG7(6)(15 downto 8) <= swc_dbg.ib(6).pta_mask;
+  TRIG7(6)(16)          <= swc_dbg.ob(6).pta_transfer_valid;
+  TRIG7(6)(17)          <= swc_dbg.ob(6).pta_ack;
+  TRIG7(6)(23 downto 18)<= swc_dbg.ob(6).pta_pgadr(5 downto 0);
+  TRIG7(6)(31 downto 24)<= (others=>'0');
+
+  TRIG8(6)(0)           <= swc_dbg.ib(7).pta_transfer;
+  TRIG8(6)(1)           <= swc_dbg.ib(7).pta_transfer_ack;
+  TRIG8(6)(7 downto 2)  <= swc_dbg.ib(7).pta_pgadr(5 downto 0);
+  TRIG8(6)(15 downto 8) <= swc_dbg.ib(7).pta_mask;
+  TRIG8(6)(16)          <= swc_dbg.ob(7).pta_transfer_valid;
+  TRIG8(6)(17)          <= swc_dbg.ob(7).pta_ack;
+  TRIG8(6)(23 downto 18)<= swc_dbg.ob(7).pta_pgadr(5 downto 0);
+  TRIG8(6)(31 downto 24)<= (others=>'0');
+  
+  TRIG9(6)(0)            <= swc_dbg.ob(2).pta_transfer_valid;
+  TRIG9(6)(1)            <= swc_dbg.ob(2).pta_ack;
+  TRIG9(6)(7 downto 2)   <= swc_dbg.ob(2).pta_pgadr(5 downto 0);
+  TRIG9(6)(8)            <= swc_dbg.ob(3).pta_transfer_valid;
+  TRIG9(6)(9)            <= swc_dbg.ob(3).pta_ack;
+  TRIG9(6)(15 downto 10) <= swc_dbg.ob(3).pta_pgadr(5 downto 0);
+  TRIG9(6)(16)           <= swc_dbg.ob(4).pta_transfer_valid;
+  TRIG9(6)(17)           <= swc_dbg.ob(4).pta_ack;
+  TRIG9(6)(23 downto 18) <= swc_dbg.ob(4).pta_pgadr(5 downto 0);
+  TRIG9(6)(24)           <= swc_dbg.ob(5).pta_transfer_valid;
+  TRIG9(6)(25)           <= swc_dbg.ob(5).pta_ack;
+  TRIG9(6)(31 downto 26) <= swc_dbg.ob(5).pta_pgadr(5 downto 0);
+
+  TRIG10(6)(0)          <= swc_dbg.ob(8).pta_transfer_valid;
+  TRIG10(6)(1)          <= swc_dbg.ob(8).pta_ack;
+  TRIG10(6)(7 downto 2) <= swc_dbg.ob(8).pta_pgadr(5 downto 0);
+  TRIG10(6)(31 downto 8) <= (others=>'0');
+
+  ---------------------------------------------------
+  -- bank 7
+  TRIG0(7)(5 downto 0) <= swc_dbg.mmu.palloc.free_pages(5 downto 0);
+  TRIG0(7)(11 downto 6)  <= swc_dbg.ib(0).page_start(5 downto 0);
+  TRIG0(7)(17 downto 12) <= swc_dbg.ib(0).page_inter(5 downto 0);
+  TRIG0(7)(23 downto 18) <= swc_dbg.ib(1).page_start(5 downto 0);
+  TRIG0(7)(29 downto 24) <= swc_dbg.ib(1).page_inter(5 downto 0);
+  TRIG1(7)(5 downto 0)   <= swc_dbg.ib(6).page_start(5 downto 0);
+  TRIG1(7)(11 downto 6)  <= swc_dbg.ib(6).page_inter(5 downto 0);
+  TRIG1(7)(17 downto 12) <= swc_dbg.ib(7).page_start(5 downto 0);
+  TRIG1(7)(23 downto 18) <= swc_dbg.ib(7).page_inter(5 downto 0);
+  TRIG1(7)(24)           <= swc_dbg.ib(0).rcv_stuck;
+  TRIG1(7)(25)           <= swc_dbg.ib(1).rcv_stuck;
+  TRIG1(7)(26)           <= swc_dbg.ib(6).rcv_stuck;
+  TRIG1(7)(27)           <= swc_dbg.ib(7).rcv_stuck;
+  TRIG1(7)(28)           <= swc_dbg.ib(0).rtu_sof_bug;
+  TRIG1(7)(29)           <= swc_dbg.ib(1).rtu_sof_bug;
+  TRIG1(7)(30)           <= swc_dbg.ib(6).rtu_sof_bug;
+  TRIG1(7)(31)           <= swc_dbg.ib(7).rtu_sof_bug;
+
+  TRIG2(7)(2 downto 0)    <= swc_dbg.ib(0).alloc_fsm;
+  TRIG2(7)(6 downto 3)    <= swc_dbg.ib(0).rcv_fsm;
+  TRIG2(7)(10 downto 7)   <= swc_dbg.ib(0).trans_fsm;
+  TRIG2(7)(14 downto 11)  <= swc_dbg.ib(0).ll_fsm;
+  TRIG2(7)(15)            <= swc_dbg.ib(0).ll_wr;
+  TRIG2(7)(16)            <= swc_dbg.ib(0).ll_wr_done;
+  TRIG2(7)(17)            <= swc_dbg.ib(0).ll_page_valid;
+  TRIG2(7)(18)            <= swc_dbg.ib(0).ll_eof;
+  TRIG2(7)(24 downto  19) <= swc_dbg.ib(0).ll_page(5 downto 0);
+  TRIG2(7)(30 downto 25)  <= swc_dbg.ib(0).ll_next_page(5 downto 0);
+  TRIG2(7)(31)            <= swc_dbg.ib(0).mpm_dlast_d0;
+
+  TRIG3(7)(2 downto 0)    <= swc_dbg.ib(1).alloc_fsm;
+  TRIG3(7)(6 downto 3)    <= swc_dbg.ib(1).rcv_fsm;
+  TRIG3(7)(10 downto 7)   <= swc_dbg.ib(1).trans_fsm;
+  TRIG3(7)(14 downto 11)  <= swc_dbg.ib(1).ll_fsm;
+  TRIG3(7)(15)            <= swc_dbg.ib(1).ll_wr;
+  TRIG3(7)(16)            <= swc_dbg.ib(1).ll_wr_done;
+  TRIG3(7)(17)            <= swc_dbg.ib(1).ll_page_valid;
+  TRIG3(7)(18)            <= swc_dbg.ib(1).ll_eof;
+  TRIG3(7)(24 downto  19) <= swc_dbg.ib(1).ll_page(5 downto 0);
+  TRIG3(7)(30 downto 25)  <= swc_dbg.ib(1).ll_next_page(5 downto 0);
+  TRIG3(7)(31)            <= swc_dbg.ib(1).mpm_dlast_d0;
+
+  TRIG4(7)(2 downto 0)    <= swc_dbg.ib(6).alloc_fsm;
+  TRIG4(7)(6 downto 3)    <= swc_dbg.ib(6).rcv_fsm;
+  TRIG4(7)(10 downto 7)   <= swc_dbg.ib(6).trans_fsm;
+  TRIG4(7)(14 downto 11)  <= swc_dbg.ib(6).ll_fsm;
+  TRIG4(7)(15)            <= swc_dbg.ib(6).ll_wr;
+  TRIG4(7)(16)            <= swc_dbg.ib(6).ll_wr_done;
+  TRIG4(7)(17)            <= swc_dbg.ib(6).ll_page_valid;
+  TRIG4(7)(18)            <= swc_dbg.ib(6).ll_eof;
+  TRIG4(7)(24 downto  19) <= swc_dbg.ib(6).ll_page(5 downto 0);
+  TRIG4(7)(30 downto 25)  <= swc_dbg.ib(6).ll_next_page(5 downto 0);
+  TRIG4(7)(31)            <= swc_dbg.ib(6).mpm_dlast_d0;
+
+  TRIG5(7)(2 downto 0)    <= swc_dbg.ib(7).alloc_fsm;
+  TRIG5(7)(6 downto 3)    <= swc_dbg.ib(7).rcv_fsm;
+  TRIG5(7)(10 downto 7)   <= swc_dbg.ib(7).trans_fsm;
+  TRIG5(7)(14 downto 11)  <= swc_dbg.ib(7).ll_fsm;
+  TRIG5(7)(15)            <= swc_dbg.ib(7).ll_wr;
+  TRIG5(7)(16)            <= swc_dbg.ib(7).ll_wr_done;
+  TRIG5(7)(17)            <= swc_dbg.ib(7).ll_page_valid;
+  TRIG5(7)(18)            <= swc_dbg.ib(7).ll_eof;
+  TRIG5(7)(24 downto  19) <= swc_dbg.ib(7).ll_page(5 downto 0);
+  TRIG5(7)(30 downto 25)  <= swc_dbg.ib(7).ll_next_page(5 downto 0);
+  TRIG5(7)(31)            <= swc_dbg.ib(7).mpm_dlast_d0;
+
+  TRIG6(7)(7 downto 0)   <= swc_dbg.ib(0).rtu_rsp_cnt;
+  TRIG6(7)(15 downto 8)  <= swc_dbg.ib(1).rtu_rsp_cnt;
+  TRIG6(7)(23 downto 16) <= swc_dbg.ib(6).rtu_rsp_cnt;
+  TRIG6(7)(31 downto 24) <= swc_dbg.ib(7).rtu_rsp_cnt;
+
+  TRIG7(7)(7 downto 0)   <= swc_dbg.ib(0).sof_cnt;
+  TRIG7(7)(15 downto 8)  <= swc_dbg.ib(1).sof_cnt;
+  TRIG7(7)(23 downto 16) <= swc_dbg.ib(6).sof_cnt;
+  TRIG7(7)(31 downto 24) <= swc_dbg.ib(7).sof_cnt;
+
+  TRIG8(7)(7 downto 0)   <= std_logic_vector(dbg_rtu_cnt(0));
+  TRIG8(7)(15 downto 8)  <= std_logic_vector(dbg_rtu_cnt(1));
+  TRIG8(7)(23 downto 16) <= std_logic_vector(dbg_rtu_cnt(6));
+  TRIG8(7)(31 downto 24) <= std_logic_vector(dbg_rtu_cnt(7));
+
+  TRIG9(7)(7 downto 0)   <= std_logic_vector(dbg_rtu_bug(0));
+  TRIG9(7)(15 downto 8)  <= std_logic_vector(dbg_rtu_bug(1));
+  TRIG9(7)(23 downto 16) <= std_logic_vector(dbg_rtu_bug(6));
+  TRIG9(7)(31 downto 24) <= std_logic_vector(dbg_rtu_bug(7));
+
+  TRIG10(7)(0) <= swc_dbg.ib(0).rtu_valid;
+  TRIG10(7)(1) <= swc_dbg.ib(0).rtu_ack;
+  TRIG10(7)(2) <= swc_dbg.ib(1).rtu_valid;
+  TRIG10(7)(3) <= swc_dbg.ib(1).rtu_ack;
+  TRIG10(7)(4) <= swc_dbg.ib(6).rtu_valid;
+  TRIG10(7)(5) <= swc_dbg.ib(6).rtu_ack;
+  TRIG10(7)(6) <= swc_dbg.ib(7).rtu_valid;
+  TRIG10(7)(7) <= swc_dbg.ib(7).rtu_ack;
+
+  TRIG11(7)(7 downto 0)   <= swc_dbg.ib(0).dbg_bare_sof;
+  TRIG11(7)(15 downto 8)  <= swc_dbg.ib(1).dbg_bare_sof;
+  TRIG11(7)(23 downto 16) <= swc_dbg.ib(6).dbg_bare_sof;
+  TRIG11(7)(31 downto 24) <= swc_dbg.ib(7).dbg_bare_sof;
   
 end rtl;
