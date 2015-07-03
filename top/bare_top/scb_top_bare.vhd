@@ -316,8 +316,10 @@ architecture rtl of scb_top_bare is
   type t_trig is array(integer range <>) of std_logic_vector(31 downto 0);
 
   signal control0                   : std_logic_vector(35 downto 0);
-  signal trig0, trig1, trig2, trig3 : t_trig(7 downto 0);--std_logic_vector(31 downto 0);
-  signal t0, t1, t2, t3             : std_logic_vector(31 downto 0);
+  signal trig0, trig1, trig2, trig3, trig4, trig5, trig6, trig7, trig8, trig9,
+         trig10,trig11 : t_trig(7 downto 0);
+  signal t0, t1, t2, t3, t4, t5, t6, t7, t8, t9,
+         t10, t11 : std_logic_vector(31 downto 0);
   signal rst_n_periph               : std_logic;
   signal link_kill                  : std_logic_vector(c_NUM_PORTS-1 downto 0);
   signal rst_n_swc  : std_logic;
@@ -374,7 +376,15 @@ architecture rtl of scb_top_bare is
       TRIG0   : in    std_logic_vector(31 downto 0);
       TRIG1   : in    std_logic_vector(31 downto 0);
       TRIG2   : in    std_logic_vector(31 downto 0);
-      TRIG3   : in    std_logic_vector(31 downto 0));
+      TRIG3   : in    std_logic_vector(31 downto 0);
+      TRIG4   : in    std_logic_vector(31 downto 0);
+      TRIG5   : in    std_logic_vector(31 downto 0);
+      TRIG6   : in    std_logic_vector(31 downto 0);
+      TRIG7   : in    std_logic_vector(31 downto 0);
+      TRIG8   : in    std_logic_vector(31 downto 0);
+      TRIG9   : in    std_logic_vector(31 downto 0);
+      TRIG10  : in    std_logic_vector(31 downto 0);
+      TRIG11  : in    std_logic_vector(31 downto 0));
   end component;
 
   signal gpio_out : std_logic_vector(c_NUM_GPIO_PINS-1 downto 0);
@@ -1174,12 +1184,28 @@ begin
        TRIG0   => T0,
        TRIG1   => T1,
        TRIG2   => T2,
-       TRIG3   => T3);
+       TRIG3   => T3,
+       TRIG4   => T4,
+       TRIG5   => T5,
+       TRIG6   => T6,
+       TRIG7   => T7,
+       TRIG8   => T8,
+       TRIG9   => T9,
+       TRIG10  => T10,
+       TRIG11  => T11);
   
        T0   <= TRIG0(to_integer(unsigned(dbg_chps_id)));
        T1   <= TRIG1(to_integer(unsigned(dbg_chps_id)));
        T2   <= TRIG2(to_integer(unsigned(dbg_chps_id)));
        T3   <= TRIG3(to_integer(unsigned(dbg_chps_id)));
+       T4   <= TRIG4(to_integer(unsigned(dbg_chps_id)));
+       T5   <= TRIG5(to_integer(unsigned(dbg_chps_id)));
+       T6   <= TRIG6(to_integer(unsigned(dbg_chps_id)));
+       T7   <= TRIG7(to_integer(unsigned(dbg_chps_id)));
+       T8   <= TRIG8(to_integer(unsigned(dbg_chps_id)));
+       T9   <= TRIG9(to_integer(unsigned(dbg_chps_id)));
+       T10  <= TRIG10(to_integer(unsigned(dbg_chps_id)));
+       T11  <= TRIG11(to_integer(unsigned(dbg_chps_id)));
   end generate;
 
   -- bank 0
