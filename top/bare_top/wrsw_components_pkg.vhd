@@ -392,6 +392,8 @@ package wrsw_components_pkg is
   
       dbg_regs_i    : in std_logic_vector(g_ndbg_regs*32-1 downto 0) := (others=>'0');
       dbg_chps_id_o : out std_logic_vector(7 downto 0);
+      dbg1_o  : out std_logic_vector(31 downto 0);
+      dbg2_o  : out std_logic_vector(31 downto 0);
   
       wb_i : in  t_wishbone_slave_in;
       wb_o : out t_wishbone_slave_out);

@@ -84,4 +84,28 @@ peripheral {
     };
   };
 
+  reg {
+    name = "dbg1 output";
+    prefix = "DBG1";
+    field {
+      name = "VAL";
+      size = 32;
+      type = SLV;
+      access_bus = READ_WRITE;
+      access_dev = READ_ONLY;
+    };
+  };
+
+  reg {
+    name = "dbg2 output";
+    prefix = "DBG2";
+    field {
+      name = "VAL";
+      size = 32;
+      type = SLV;
+      access_bus = READ_WRITE;
+      access_dev = READ_ONLY;
+    };
+  };
+
 };
