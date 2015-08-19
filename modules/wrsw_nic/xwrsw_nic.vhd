@@ -55,6 +55,8 @@ use work.wr_fabric_pkg.all;
 
 use work.nic_wbgen2_pkg.all;
 
+use work.wrs_dbg_pkg.all;
+
 
 entity xwrsw_nic is
   generic
@@ -92,7 +94,9 @@ entity xwrsw_nic is
 -------------------------------------------------------------------------------
 
     wb_i : in  t_wishbone_slave_in;
-    wb_o : out t_wishbone_slave_out
+    wb_o : out t_wishbone_slave_out;
+
+    nice_dbg_o  : out t_dbg_nic
     );
 
 end xwrsw_nic;
@@ -238,7 +242,8 @@ architecture rtl of xwrsw_nic is
       bna_i                   : in  std_logic;
       buf_grant_i             : in  std_logic;
       buf_addr_o              : out std_logic_vector(c_nic_buf_size_log2-3 downto 0);
-      buf_data_i              : in  std_logic_vector(31 downto 0));
+      buf_data_i              : in  std_logic_vector(31 downto 0);
+      nice_dbg_o              : out t_dbg_nic_tx);
   end component;
 
   signal rxdesc_request_next : std_logic;
@@ -576,7 +581,8 @@ begin  -- rtl
       bna_i                   => tx_bna,
       buf_grant_i             => mem_grant_tx,
       buf_addr_o              => mem_addr_tx,
-      buf_data_i              => nic_mem_rd_data);
+      buf_data_i              => nic_mem_rd_data,
+      nice_dbg_o              => nice_dbg_o.tx);
 
 
 end rtl;

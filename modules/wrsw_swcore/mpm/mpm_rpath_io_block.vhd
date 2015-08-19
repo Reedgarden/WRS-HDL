@@ -553,6 +553,19 @@ begin  -- behavioral
   nice_dbg_o.fetch_first <= fetch_first;
   nice_dbg_o.fetch_ack   <= fetch_ack;
   nice_dbg_o.ll_size     <= cur_ll.size(6 downto 0);
-  nice_dbg_o.fetch_pg_words <= std_logic_vector(fetch_pg_words(6 downto 0));
+  nice_dbg_o.fetch_pg_words(6 downto 0) <= std_logic_vector(fetch_pg_words(6 downto 0));
+  nice_dbg_o.data <= df_d_i;
+  nice_dbg_o.data_rd <= df_rd_int;
+  nice_dbg_o.cur_page <= cur_page;
+  nice_dbg_o.df_empty <= df_empty_i;
+  nice_dbg_o.pf_we    <= pf_we_int;
+  nice_dbg_o.pf_full  <= pf_full_i;
+  nice_dbg_o.fetch_valid <= fetch_valid;
+  nice_dbg_o.fvalid_int  <= fvalid_int;
+  nice_dbg_o.fetch_last  <= fetch_last;
+  nice_dbg_o.d_valid_int <= d_valid_int;
+  nice_dbg_o.supress_pre_fetch <= supress_pre_fetch;
+  nice_dbg_o.fetch_pg_words_new <= fetch_pg_words_new;
+  nice_dbg_o.fetch_pg_words_used <= fetch_pg_words_used;
   
 end behavioral;

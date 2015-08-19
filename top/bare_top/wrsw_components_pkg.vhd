@@ -194,7 +194,8 @@ package wrsw_components_pkg is
       rtu_rsp_valid_o     : out std_logic;
       rtu_rsp_ack_i       : in  std_logic;
       wb_i                : in  t_wishbone_slave_in;
-      wb_o                : out t_wishbone_slave_out);
+      wb_o                : out t_wishbone_slave_out;
+      nice_dbg_o  : out t_dbg_nic);
   end component;
 
 

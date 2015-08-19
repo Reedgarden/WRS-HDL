@@ -94,6 +94,10 @@ package wrs_dbg_pkg is
     obq_full  : std_logic;
     data_error  : std_logic;
     mpm_dlast   : std_logic;
+    mpm_pgadr : std_logic_vector(9 downto 0);
+    mpm_adr_int : std_logic_vector(1 downto 0);
+    mpm_dat_int : std_logic_vector(15 downto 0);
+    mpm_dvalid  : std_logic;
   end record;
   type t_dbg_swc_ob_array is array (natural range <>) of t_dbg_swc_ob;
   
@@ -189,6 +193,19 @@ package wrs_dbg_pkg is
     fetch_ack        : std_logic;
     ll_size          : std_logic_vector(6 downto 0);
     fetch_pg_words   : std_logic_vector(6 downto 0);
+    data             : std_logic_vector(17 downto 0);
+    data_rd          : std_logic;
+    cur_page         : std_logic_vector(9 downto 0);
+    df_empty         : std_logic;
+    pf_we            : std_logic;
+    pf_full          : std_logic;
+    fetch_valid      : std_logic;
+    fvalid_int       : std_logic;
+    fetch_last       : std_logic;
+    d_valid_int      : std_logic;
+    supress_pre_fetch: std_logic;
+    fetch_pg_words_new : std_logic;
+    fetch_pg_words_used : std_logic;
   end record;
   type t_dbg_mpm_read_io_array is array (natural range<>) of t_dbg_mpm_read_io;
 
@@ -232,6 +249,16 @@ package wrs_dbg_pkg is
 
   type t_dbg_rtu is record
     rport : t_dbg_rtu_port_array(17 downto 0);
+  end record;
+
+  -- NIC types
+  type t_dbg_nic_tx is record
+    ack_cnt : std_logic_vector(3 downto 0);
+    fsm : std_logic_vector(3 downto 0);
+  end record;
+
+  type t_dbg_nic is record
+    tx  : t_dbg_nic_tx;
   end record;
 
 end wrs_dbg_pkg;

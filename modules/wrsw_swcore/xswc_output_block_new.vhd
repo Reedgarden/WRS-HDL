@@ -1062,5 +1062,9 @@ begin  --  behavoural
   nice_dbg_o.obq_full <= not (or_reduce(not_full_array));
   nice_dbg_o.data_error <= out_dat_err;
   nice_dbg_o.mpm_dlast <= mpm_dlast_i;
+  nice_dbg_o.mpm_pgadr  <= mpm_pg_addr;
+  nice_dbg_o.mpm_adr_int <= mpm2wb_adr_int;
+  nice_dbg_o.mpm_dat_int <= mpm2wb_dat_int;
+  nice_dbg_o.mpm_dvalid  <= mpm_dvalid_i;
 
 end behavoural;

@@ -46,6 +46,7 @@ use work.nic_constants_pkg.all;
 use work.nic_descriptors_pkg.all;
 use work.wr_fabric_pkg.all;
 use work.nic_wbgen2_pkg.all;
+use work.wrs_dbg_pkg.all;
 
 
 entity nic_tx_fsm is
@@ -117,7 +118,9 @@ entity nic_tx_fsm is
     buf_grant_i : in  std_logic;
     -- buffer address, data and write enable lines.
     buf_addr_o  : out std_logic_vector(c_nic_buf_size_log2-3 downto 0);
-    buf_data_i  : in  std_logic_vector(31 downto 0)
+    buf_data_i  : in  std_logic_vector(31 downto 0);
+
+    nice_dbg_o  : out t_dbg_nic_tx
   );
 end nic_tx_fsm;
 
@@ -513,4 +516,19 @@ begin  -- behavioral
       end if;
     end if;
   end process;
+  nice_dbg_o.ack_cnt  <= std_logic_vector(ack_count);
+  nice_dbg_o.fsm      <= x"0" when(state = TX_DISABLED) else
+                         x"1" when(state = TX_REQUEST_DESCRIPTOR) else
+                         x"2" when(state = TX_MEM_FETCH) else
+                         x"3" when(state = TX_START_PACKET) else
+                         x"4" when(state = TX_HWORD) else
+                         x"5" when(state = TX_LWORD) else
+                         x"6" when(state = TX_END_PACKET) else
+                         x"7" when(state = TX_OOB1) else
+                         x"8" when(state = TX_OOB2) else
+                         x"9" when(state = TX_PAD) else
+                         x"A" when(state = TX_UPDATE_DESCRIPTOR) else
+                         x"B" when(state = TX_ERROR) else
+                         x"C" when(state = TX_STATUS) else
+                         x"F";
 end behavioral;
