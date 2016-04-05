@@ -116,6 +116,7 @@ entity rtu_port_new is
     port_almost_full_o        : out std_logic;
     port_full_o               : out std_logic;
 
+    links_up_i               : in std_logic_vector(g_port_mask_bits-1 downto 0);
     -------------------------------------------------------------------------------
     -- info to TRU
     ------------------------------------------------------------------------------- 
@@ -172,6 +173,8 @@ architecture behavioral of rtu_port_new is
   signal rsp                         : t_rtu_response;
   signal rtu_idle                    : std_logic;
   signal forwarding_mask             : std_logic_vector(c_rtu_max_ports-1 downto 0);  --helper 
+  signal fwd_mask_only_up            : std_logic_vector(c_rtu_max_ports-1 downto 0);  --helper 
+  signal links_up_mask               : std_logic_vector(c_rtu_max_ports-1 downto 0);  --helper
   signal forwarding_mask_CPU_filtered: std_logic_vector(c_rtu_max_ports-1 downto 0);  --helper 
   signal forwarding_and_mirror_mask  : std_logic_vector(c_rtu_max_ports-1 downto 0);  --helper 
   signal forwarding_without_mr_dst_mask : std_logic_vector(c_rtu_max_ports-1 downto 0);  --helper 
@@ -271,7 +274,7 @@ begin
   --         (tx) frame to the reception port... we don't mirror this traffic, this is why we 
   --         apply below the f_set_bit() mask 
   mirror_port_src_tx  <= '0' when (rtu_str_config_i.mr_ena = '0') else  -- disabled
-                         '1' when ((f_set_bit(forwarding_mask,'0',g_port_index) and --no to myself
+                         '1' when ((f_set_bit(fwd_mask_only_up,'0',g_port_index) and --no to myself
                                     rtu_str_config_i.mirror_port_src_tx) /=
                                      zeros(c_rtu_max_ports-1 downto 0)  ) else
                          '0';
@@ -746,6 +749,11 @@ begin
   --                  4) fast match decision only 
                          fast_match.port_mask;
 
+  -- final forwarding mask only for links that are up
+  links_up_mask(c_rtu_max_ports-1 downto g_port_mask_bits) <= (others=>'0');
+  links_up_mask(g_port_mask_bits-1 downto 0) <= links_up_i;
+  fwd_mask_only_up    <= forwarding_mask and links_up_mask;
+
   -- forming final drop:
   --                  d) for debugging: forcing to have only fast match
   drop                <= fast_match.drop when (dbg_force_fast_match_only = '1') else
@@ -779,13 +787,13 @@ begin
   -- to make sure that HP traffic is not disturbed due to the fact that it's fowarded to slow NIC... just not 
   -- foward it there... (NIC should have it's own mechanism to prevent such situation, but precautions are not bad).
   -- In case that some diagnostics is required, we can enable forwarding of HP traffic to NIC.
-  forwarding_mask_CPU_filtered   <= forwarding_mask or rtu_str_config_i.cpu_forward_mask 
+  forwarding_mask_CPU_filtered   <= fwd_mask_only_up or rtu_str_config_i.cpu_forward_mask 
                                                     when (rtu_str_config_i.hp_fw_cpu_ena = '1' and hp = '1') else
-                                    forwarding_mask when                                          (hp = '0') else
-                                    forwarding_mask when                                          (nf = '1') else
-                                    forwarding_mask and (not rtu_str_config_i.cpu_forward_mask);-- this is HP, not link-limited (nf) and
+                                    fwd_mask_only_up when                                          (hp = '0') else
+                                    fwd_mask_only_up when                                          (nf = '1') else
+                                    fwd_mask_only_up and (not rtu_str_config_i.cpu_forward_mask);-- this is HP, not link-limited (nf) and
                                                                                                 -- forwarding of HP to NIC is disabled
---                                     f_set_bit(forwarding_mask,'0',g_num_ports) ;  -- this is HP, not link-limited (nf) and
+--                                     f_set_bit(fwd_mask_only_up,'0',g_num_ports) ;  -- this is HP, not link-limited (nf) and
 --                                                                                   -- forwarding of HP to NIC is disabled
 
   -- forwarding mask without mirror destination port

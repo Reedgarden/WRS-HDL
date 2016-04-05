@@ -311,6 +311,7 @@ package rtu_private_pkg is
       fast_match_rd_data_i      : in t_match_response;
       port_almost_full_o        : out std_logic;
       port_full_o               : out std_logic;
+      links_up_i                : in  std_logic_vector(g_port_mask_bits-1 downto 0);
 --       tru_o                     : out t_rtu2tru;
       rtu_str_config_i          : in t_rtu_special_traffic_config;
       rtu_gcr_g_ena_i           : in std_logic;  

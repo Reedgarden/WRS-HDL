@@ -323,7 +323,7 @@ architecture rtl of scb_top_bare is
   signal swc_nomem  : std_logic;
   signal swc_wdog_out : t_swc_fsms_array(c_NUM_PORTS downto 0);
   signal ep_stop_traffic : std_logic;
-
+  signal ep_links_up  : std_logic_vector(c_NUM_PORTS downto 0);
  
 
 
@@ -618,6 +618,7 @@ begin
   
     rtu_rsp(c_NUM_PORTS).hp <= '0';
     fc_rx_pause(c_NUM_PORTS)       <= c_zero_pause; -- no pause for NIC  
+    ep_links_up(c_NUM_PORTS) <= '1'; --for RTU responses NIC is always up
     
     U_Endpoint_Fanout : xwb_sdb_crossbar
       generic map (
@@ -718,13 +719,12 @@ begin
           inject_packet_sel_i  => tru2ep(i).inject_packet_sel,
           inject_user_value_i  => tru2ep(i).inject_user_value,
           link_kill_i          => tru2ep(i).link_kill, --'0' , --link_kill(i), -- to change
-          link_up_o            => ep2tru(i).status,
           ------ PAUSE to SWcore  ------------
           fc_rx_pause_start_p_o   => fc_rx_pause(i).req,  
           fc_rx_pause_quanta_o    => fc_rx_pause(i).quanta,    
           fc_rx_pause_prio_mask_o => fc_rx_pause(i).classes, 
           ----------------------------
-
+          link_up_o     => ep_links_up(i),
           rmon_events_o => ep_events((i+1)*c_epevents_sz-1 downto i*c_epevents_sz),
 
           led_link_o => led_link_o(i),
@@ -734,6 +734,7 @@ begin
 
           phys_o(i).tx_data <= ep_dbg_data_array(i);
           phys_o(i).tx_k    <= ep_dbg_k_array(i);
+          ep2tru(i).status  <= ep_links_up(i);
 
       txtsu_timestamps(i).port_id(5) <= '0';
       
@@ -876,6 +877,7 @@ begin
         rsp_ack_i  => rtu_rsp_ack(g_num_ports-1 downto 0),
         rsp_abort_i=> rtu_rsp_abort(g_num_ports-1 downto 0), -- this is request from response receiving node
         rq_abort_i => rtu_rq_abort(g_num_ports-1 downto 0), -- this is request from requesting module
+        links_up_i => ep_links_up,
         ------ new TRU stuff ----------
         tru_req_o  => tru_req,
         tru_resp_i => tru_resp,
