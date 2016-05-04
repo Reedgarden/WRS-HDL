@@ -125,7 +125,7 @@ entity scb_top_sim is
     td_o    : out std_logic_vector(18 * g_num_ports-1 downto 0);
     rd_i    : in  std_logic_vector(18 * g_num_ports-1 downto 0);
     rbclk_i : in  std_logic_vector(g_num_ports-1 downto 0);
-    phys_rdy_i : in std_logic_vector(g_num_ports-1 downto 0);
+    phys_rdy_i : in std_logic_vector(g_num_ports-1 downto 0) :=(others =>'1');
 
 
     led_link_o : out std_logic_vector(g_num_ports-1 downto 0);
