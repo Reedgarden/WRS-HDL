@@ -556,7 +556,7 @@ architecture rtl of xswc_core is
         --: output traffic shaper (PAUSE + time-aware-shaper)
         -------------------------------------------------------------------------------  
         ots_output_mask_i         => ots2ob_output_masks(i),
-        ots_output_drop_at_rx_hp_i=> shaper_drop_at_hp_ena_i,
+        ots_output_drop_at_rx_hp_i=> '1',--shaper_drop_at_hp_ena_i,
 
         -------------------------------------------------------------------------------
         -- pWB : output (goes to the Endpoint)
