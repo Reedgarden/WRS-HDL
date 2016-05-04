@@ -2832,7 +2832,7 @@ module main;
     * - enable FastForward for broadcast
     * - 
    **/
-///*
+/*
   initial begin
     portUnderTest        = 18'b000000000000000011;
                          // tx  ,rx ,opt
@@ -2855,6 +2855,66 @@ module main;
     g_do_vlan_config    = 2; // snake EP configuration (tagging proper VLANs on ports
     g_set_untagging     = 2; // untagging
 
+  end
+*/
+   /** ***************************   test scenario 44  ************************************* **/
+   /** ***************************   (PROBLEMATIC)  ************************************* **/  
+  /*
+   * stress test: 18 ports with packets, no gap - page-allocation too slow...
+   * 
+   **/
+///*
+  initial begin
+    portUnderTest        = 18'b111111111111111111;
+    repeat_number        = 30;
+    tries_number         = 1;
+//     for(int i=0;i<g_num_ports;i++)  trans_paths[i].op    = 1; //broadcast
+
+    vid_init_for_inc     = 1;
+                         // tx  ,rx ,opt
+    trans_paths[0]       = '{0  ,17 ,666};
+    trans_paths[1]       = '{1  ,16 ,666};
+    trans_paths[2]       = '{2  ,15 ,666};  
+    trans_paths[3]       = '{3  ,14 ,666};
+    trans_paths[4]       = '{4  ,13 ,666};
+    trans_paths[5]       = '{5  ,12 ,666};  
+    trans_paths[6]       = '{6  ,11 ,666};
+    trans_paths[7]       = '{7  ,10 ,666};
+    trans_paths[8]       = '{8  ,9  ,666};  
+    trans_paths[9]       = '{9  ,8  ,666};
+    trans_paths[10]      = '{10 ,7  ,666};
+    trans_paths[11]      = '{11 ,6  ,666};  
+    trans_paths[12]      = '{12 ,5  ,666};
+    trans_paths[13]      = '{13 ,4  ,666};
+    trans_paths[14]      = '{14 ,3  ,666};  
+    trans_paths[15]      = '{15 ,2  ,666};
+    trans_paths[16]      = '{16 ,1  ,666};
+    trans_paths[17]      = '{17 ,0  ,666};  
+
+                     //              mask        , fid , prio,has_p,overr, drop , vid, valid
+    sim_vlan_tab[0]  = '{'{32'h000000000000000000, 8'h0, 3'h0, 1'b0, 1'b0, 1'b1}, 0  , 1'b1 };
+    sim_vlan_tab[1]  = '{'{32'b100000000000000000, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 1  , 1'b1 };
+    sim_vlan_tab[2]  = '{'{32'b010000000000000000, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 2  , 1'b1 };
+    sim_vlan_tab[3]  = '{'{32'b001000000000000000, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 3  , 1'b1 };
+    sim_vlan_tab[4]  = '{'{32'b000100000000000000, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 4  , 1'b1 };
+    sim_vlan_tab[5]  = '{'{32'b000010000000000000, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 5  , 1'b1 };
+    sim_vlan_tab[6]  = '{'{32'b000001000000000000, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 6  , 1'b1 };
+    sim_vlan_tab[7]  = '{'{32'b000000100000000000, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 7  , 1'b1 };
+    sim_vlan_tab[8]  = '{'{32'b000000010000000000, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 8  , 1'b1 };
+    sim_vlan_tab[9]  = '{'{32'b000000001000000000, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 9  , 1'b1 };
+    sim_vlan_tab[10] = '{'{32'b000000000100000000, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 10 , 1'b1 };
+    sim_vlan_tab[11] = '{'{32'b000000000010000000, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 11 , 1'b1 };
+    sim_vlan_tab[12] = '{'{32'b000000000001000000, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 12 , 1'b1 };
+    sim_vlan_tab[13] = '{'{32'b000000000000100000, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 13 , 1'b1 };
+    sim_vlan_tab[14] = '{'{32'b000000000000010000, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 14 , 1'b1 };
+    sim_vlan_tab[15] = '{'{32'b000000000000001000, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 15 , 1'b1 };
+    sim_vlan_tab[16] = '{'{32'b000000000000000100, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 16 , 1'b1 };
+    sim_vlan_tab[17] = '{'{32'b000000000000000010, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 17 , 1'b1 };
+    sim_vlan_tab[18] = '{'{32'b000000000000000001, 8'h0, 3'h0, 1'b0, 1'b0, 1'b0}, 18 , 1'b1 };
+
+   mac_br               = 1;
+    g_enable_pck_gaps    = 0;
+    g_force_payload_size = 64;
   end
 //*/
 //////////////////////////////////////////////////////////////////////////////////////////////
