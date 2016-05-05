@@ -2857,13 +2857,12 @@ module main;
 
   end
 */
-   /** ***************************   test scenario 44  ************************************* **/
-   /** ***************************   (PROBLEMATIC)  ************************************* **/  
+   /** ***************************   test scenario 82  ************************************* **/
   /*
-   * stress test: 18 ports with packets, no gap - page-allocation too slow...
+   * stress test: 18 ports with fast forward packets,
    * 
    **/
-///*
+/*
   initial begin
     portUnderTest        = 18'b111111111111111111;
     repeat_number        = 30;
@@ -2916,6 +2915,82 @@ module main;
     g_enable_pck_gaps    = 0;
     g_force_payload_size = 64;
   end
+*/
+
+   /** ***************************   test scenario 83  ************************************* **/
+  /*
+   * test deterministic forwarding with dropiing of non-hp frames
+   * 
+   **/
+/*
+  initial begin
+    portUnderTest        = 18'b000000001000000100;
+    repeat_number        = 30;
+    tries_number         = 1;
+//     for(int i=0;i<g_num_ports;i++)  trans_paths[i].op    = 1; //broadcast
+
+    vid_init_for_inc     = 1;
+                         // tx  ,rx ,opt
+    trans_paths[2]       = '{2  ,14 ,666};  
+    trans_paths[9]       = '{9  ,14 ,666};
+
+                     //              mask        , fid , prio,has_p,overr, drop , vid, valid
+    sim_vlan_tab[1]  = '{'{32'b000100000000000100, 8'h1, 3'h0, 1'b0, 1'b0, 1'b0}, 1  , 1'b1 };
+    sim_vlan_tab[2]  = '{'{32'b000100001000000000, 8'h1, 3'h0, 1'b0, 1'b0, 1'b0}, 2  , 1'b1 };
+    
+    g_do_vlan_config = 2; //use the configuration below for Endpoints
+    for(int i=0;i<g_num_ports;i++) ep_vlan_conf[i].qmode = 3;// configure all ports as unqualified
+    // configure cosen ports as needed
+                      //qmode, fix_prio, prio_val, pvid   
+    ep_vlan_conf[2]  ='{  0,        1,        7,   1 }; //port =  1 access, tag with vid=1
+    ep_vlan_conf[9]  ='{  0,        1,        4,   2 }; //port =  9 access, tag with vid=1
+    ep_vlan_conf[14] ='{  1,        0,        0,   1 }; //port =  14 trunk                     
+                         
+    mac_br               = 1;
+    g_is_qvlan           = 0;
+    hp_prio_mask         = 'b10000000;// prio=7 is hp
+    
+    g_enable_pck_gaps    = 1;
+    g_min_pck_gap        = 1250;
+    g_max_pck_gap        = 1250;
+    g_force_payload_size = 64;
+  end
+*/
+
+   /** ***************************   test scenario 84  ************************************* **/
+  /*
+   * next latency test
+   * 
+   **/
+///*
+  initial begin
+    portUnderTest        = 18'b000000000000100100;
+    repeat_number        = 30;
+    tries_number         = 1;
+    vid_init_for_inc     = 1;
+                         // tx  ,rx ,opt
+    trans_paths[2]       = '{2  ,7 ,3000};  
+    trans_paths[5]       = '{5  ,7 ,3001};
+
+                     //              mask        , fid , prio,has_p,overr, drop , vid, valid
+    sim_vlan_tab[1]  = '{'{32'b000000000010000100, 8'h1, 3'h0, 1'b0, 1'b0, 1'b0}, 1  , 1'b1 };
+    sim_vlan_tab[2]  = '{'{32'b000000000010100000, 8'h1, 3'h0, 1'b0, 1'b0, 1'b0}, 2  , 1'b1 };
+    
+    g_do_vlan_config = 2; //use the configuration below for Endpoints
+    for(int i=0;i<g_num_ports;i++) ep_vlan_conf[i].qmode = 3;// configure all ports as unqualified
+    // configure cosen ports as needed
+                      //qmode, fix_prio, prio_val, pvid   
+    ep_vlan_conf[2]  ='{  0,        1,        7,   1 }; //port =  1 access, tag with vid=1
+    ep_vlan_conf[5]  ='{  0,        1,        4,   2 }; //port =  9 access, tag with vid=1
+    ep_vlan_conf[7]  ='{  1,        0,        0,   1 }; //port =  14 trunk                     
+                         
+    mac_br               = 1;
+    g_is_qvlan           = 0;
+    hp_prio_mask         = 'b10000000;// prio=7 is hp
+    
+    g_enable_pck_gaps    = 1; // IFG defined by opt value
+    g_force_payload_size = 0;//defined by opt value
+  end
 //*/
 //////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////
@@ -2954,7 +3029,11 @@ module main;
       integer dmac_dist = 0;
       //int i,j;
       
-      if(g_enable_pck_gaps == 1) 
+      if(opt == 3000)
+        pck_gap = 803; // 6.424 us
+      else if(opt == 3001)
+        pck_gap = 250; // 2 us
+      else if(g_enable_pck_gaps == 1) 
         if(g_min_pck_gap == g_max_pck_gap)
           pck_gap = g_min_pck_gap;
         else
@@ -2966,7 +3045,7 @@ module main;
   
       tmpl           = new;
 
-      if(opt == 0 || opt == 200 || opt == 201 || opt == 666 || opt == 667 || opt == 1000 || opt == 2000)
+      if(opt == 0 || opt == 200 || opt == 201 || opt == 666 || opt == 667 || opt == 1000 || opt == 2000 || opt == 3000 || opt == 3001)
         tmpl.src       = '{srcPort, 2,3,4,5,6};
       else if(opt == 101 | opt == 102)
         tmpl.src       = '{0,0,0,0,0,0};
@@ -2983,7 +3062,7 @@ module main;
         tmpl.dst       = '{'h01, 'h80, 'hC2, 'h00, 'h00, 'h00}; //BPDU
       else if(opt==3)
         tmpl.dst       = '{17, 'h50, 'hca, 'hfe, 'hba, 'hbe};
-      else if(opt==4 || opt==10 || opt==13 || opt==201 || opt == 203 || opt == 204 || opt == 205 || opt == 206 || opt == 207 || opt == 444 || opt==666|| opt==667 || opt==668)
+      else if(opt==4 || opt==10 || opt==13 || opt==201 || opt == 203 || opt == 204 || opt == 205 || opt == 206 || opt == 207 || opt == 444 || opt==666|| opt==667 || opt==668 || opt == 3000 || opt == 3001)
         tmpl.dst       = '{'hFF, 'hFF, 'hFF, 'hFF, 'hFF, 'hFF}; // broadcast      
       else if(opt==5)
         tmpl.dst       = '{'h11, 'h50, 'hca, 'hfe, 'hba, 'hbe}; // single Fast Forward
@@ -3043,6 +3122,10 @@ module main;
           gen.set_size(63, 1001);
         else if(opt == 200)
           gen.set_size(1000, 1001);
+        else if(opt == 3000)
+          gen.set_size(64, 65);
+        else if(opt == 3001)
+          gen.set_size(1492, 1493);
         else
           gen.set_size(g_payload_range_min, g_payload_range_max);
 //           gen.set_size(63, 257);
